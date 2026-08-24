@@ -13,6 +13,26 @@ header p {
   color: #666;
 }
 
+fieldset {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.75rem;
+}
+
+label.inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-right: 1rem;
+  font-size: 0.9rem;
+}
+
+label.inline input {
+  display: inline;
+  width: auto;
+}
+
 .panel {
   border: 1px solid #ccc;
   border-radius: 8px;

@@ -41,11 +41,16 @@ describe('pickProfile', () => {
     expect(pickProfile('run', true)).toBe('foot_fast');
   });
 
-  it('always uses the paved bike_road profile for bike, regardless of terrain preference', () => {
-    // Road bike / slick tires: bike_mountain (unpaved trails) is never
-    // acceptable, so preferFlat has no effect on the bike profile.
-    expect(pickProfile('bike', false)).toBe('bike_road');
-    expect(pickProfile('bike', true)).toBe('bike_road');
+  it('picks bike surface independently of terrain preference', () => {
+    // preferFlat never changes the bike profile - only the surface choice does.
+    expect(pickProfile('bike', false, 'road')).toBe('bike_road');
+    expect(pickProfile('bike', true, 'road')).toBe('bike_road');
+    expect(pickProfile('bike', false, 'gravel')).toBe('bike_mountain');
+    expect(pickProfile('bike', true, 'gravel')).toBe('bike_mountain');
+  });
+
+  it('defaults bike surface to road when unspecified', () => {
+    expect(pickProfile('bike')).toBe('bike_road');
   });
 });
 
@@ -137,6 +142,33 @@ describe('generateLoopRoute', () => {
     const result = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 5 }, client);
     expect(result.worstSpurKm).toBeLessThanOrEqual(0.12);
     expect(call).toBeGreaterThan(1);
+  });
+
+  it('honours a custom exclusionChecker passed in the request', async () => {
+    // A checker that rejects absolutely everything - proves the injected
+    // checker is what's actually consulted, not just the built-in static list.
+    const rejectEverything = { check: () => ({ name: 'test zone', bounds: { minLat: -90, maxLat: 90, minLon: -180, maxLon: 180 } }) };
+    let call = 0;
+    const client: MapyRoutingClient = {
+      async route(waypoints) {
+        call++;
+        const lengthKm = sumPathKm(waypoints);
+        return {
+          lengthKm,
+          durationS: lengthKm * 300,
+          geometry: { type: 'Feature', geometry: { type: 'LineString', coordinates: waypoints.map((p) => [p.lon, p.lat]) } },
+        };
+      },
+    };
+
+    const result = await generateLoopRoute(
+      { start, targetDistanceKm: 10, sport: 'run', seed: 1, exclusionChecker: rejectEverything, maxIterations: 3 },
+      client,
+    );
+    // Never "good enough" since every candidate is rejected, so it must
+    // exhaust the full iteration budget and still return its best guess.
+    expect(call).toBe(3);
+    expect(result).toBeDefined();
   });
 
   it('never accepts a route that enters an excluded zone, even if the distance matches perfectly', async () => {

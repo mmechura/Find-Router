@@ -17,6 +17,12 @@ Osobní nástroj, který ti vygeneruje trasu na dnešní trénink:
    jedné dlouhé trasy (GPX stejně nenese tempo/zóny, to řeší intervals.icu
    -> Garmin Connect strukturovaným tréninkem samostatně).
 
+U kola si vybereš **silnice / gravel** (mění se tím povolený povrch, ne
+sklon terénu) a appka se aktivně vyhýbá jak **slepým výběžkům** (vjeď a
+hned se vracej zpátky), tak **zakázaným oblastem** — ty ověřuje živě proti
+OpenStreetMap datům (Overpass API), ne jen podle ručně psaného seznamu.
+Podrobnosti a limity obojího jsou v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
 Architektura a vědomá omezení (přesnost převýšení, rozpoznávání intervalů,
 odhad tempa) jsou popsané v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 

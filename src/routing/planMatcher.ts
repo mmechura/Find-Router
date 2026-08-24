@@ -51,6 +51,7 @@ export function buildRouteRequest(
   workout: PlannedWorkout,
   start: LatLon,
   readiness?: FatigueReadiness,
+  surface: 'road' | 'gravel' = 'road',
 ): RoutePlan {
   const sport = mapIntervalsTypeToSport(workout.type);
   const paceKmh = readiness?.recentAvgSpeedKmh ?? DEFAULT_PACE_KMH[sport];
@@ -75,6 +76,7 @@ export function buildRouteRequest(
     targetDistanceKm,
     sport,
     preferFlat,
+    surface: sport === 'bike' ? surface : undefined,
     repeatSegmentKm,
     structure,
   };

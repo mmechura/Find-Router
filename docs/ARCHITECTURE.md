@@ -117,18 +117,34 @@ Proto appka po přečtení plánovaného tréninku:
 
 ## Povrch a zakázané zóny
 
-- **Kolo je vždy jen po asfaltu.** `pickProfile()` pro `sport: 'bike'` vrací
-  vždy `bike_road`, nikdy `bike_mountain` — appka počítá s tréninkem na
-  silničním kole (galuskách), takže terén/nezpevněné cesty jsou vyloučené
-  bez ohledu na preferenci rovina/kopce (ta u kola teď na volbu profilu
-  nemá vliv, řeší se to jen skrz `bike_road`, který sám o sobě klidně
-  vede do kopců, jen po silnici).
-- **Zakázané zóny** (`excludedZones.ts`): appka nikdy nevrátí trasu, která
-  prochází uzavřeným/oploceným areálem uvedeným v seznamu. Zatím je tam
-  jen jeden odhadovaný obdélník pro Třinecké železárny — přesnost si
-  ověř a případně oprav podle skutečných souřadnic (pravý klik na dva
-  protilehlé rohy areálu v mapy.com → "Zkopírovat souřadnice"). Narazíš-li
-  na další podobné místo, přidej ho do `EXCLUDED_ZONES` stejným způsobem.
+- **Povrch kola je volitelný.** `pickProfile()` pro `sport: 'bike'` bere
+  navíc `surface: 'road' | 'gravel'` (posílá se z UI, výchozí `'road'`) —
+  `road` → `bike_road` (asfalt, galusky), `gravel` → `bike_mountain`
+  (Mapy.com nemá samostatný gravel profil, tohle je nejbližší "nezpevněné
+  ok"). Preference rovina/kopce na tuhle volbu vliv nemá — jde čistě o to,
+  jaké kolo je zrovna v hangáru.
+- **Zakázané zóny — teď dynamicky, ne jen ručně.** Ruční seznam
+  (`EXCLUDED_ZONES` v `excludedZones.ts`) neškáluje — nejde ručně
+  posbírat každý oplocený/soukromý areál, na který appka může narazit.
+  Místo spoléhání jen na něj appka před generováním trasy zavolá veřejné
+  **Overpass API** (`src/integrations/overpass.ts`) a zeptá se
+  OpenStreetMap dat na cesty/areály v okolí startu označené jako
+  `access=private`/`access=no` nebo bránou (`barrier=gate`) — tohle
+  pokrývá prakticky libovolné "sem nesmíš" místo, ne jen to jedno, co jsi
+  nahlásil. Dotaz proběhne **jednou na trasu** (ne na každou iteraci) a
+  najeté kandidáty appka vůbec nepřijme, pokud do takové oblasti vstupují.
+  Ruční seznam zůstává jako záložní síť pro místa, která v OSM datech
+  nemají správný tag (jako zatím u Třineckých železáren — je tam jen
+  odhadovaný obdélník ze screenshotu, uvítám přesné souřadnice).
+  Selhání dotazu na Overpass (výpadek, rate limit) appku nezastaví — jen
+  potichu použije jen ruční seznam, viz `buildExclusionChecker()`.
+- **Slepé výběžky se řeší agresivněji.** Pokud kandidátní trasa
+  opakovaně naráží na zakázanou zónu nebo ošklivý výběžek, appka po pár
+  neúspěšných pokusech (v rámci stejného rozpočtu iterací) sníží počet
+  vynucených bodů okruhu — méně bodů znamená méně příležitostí trefit
+  slepou uličku. Tohle je zmírnění pravděpodobnosti, ne stoprocentní
+  záruka: u čistě náhodně kladených bodů se občas žádná čistá varianta
+  v rámci pár pokusů nenajde, obzvlášť v hustě zastavěné čtvrti.
 
 ## Další vědomá omezení
 

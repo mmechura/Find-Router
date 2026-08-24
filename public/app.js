@@ -146,10 +146,11 @@ generateBtn.addEventListener('click', async () => {
   setStatus('Generuji trasu…');
   generateBtn.disabled = true;
   try {
+    const surface = document.querySelector('input[name="surface"]:checked')?.value || 'road';
     const res = await fetch('/api/route/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateInput.value, lat, lon }),
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface }),
     });
     const data = await res.json();
     if (!res.ok) {

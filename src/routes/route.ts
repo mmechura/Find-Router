@@ -7,12 +7,18 @@ import { getValidStravaAccessToken } from '../stravaSession.js';
 import { computeReadiness } from '../routing/readiness.js';
 import { buildRouteRequest, mapIntervalsTypeToSport } from '../routing/planMatcher.js';
 import { generateLoopRoute } from '../routing/loopRouteGenerator.js';
+import { buildExclusionChecker } from '../routing/excludedZones.js';
 import type { FatigueReadiness } from '../types.js';
 
 export const routeRouter = Router();
 
 routeRouter.post('/generate', async (req, res) => {
-  const { date, lat, lon } = req.body as { date?: string; lat?: number; lon?: number };
+  const { date, lat, lon, surface } = req.body as {
+    date?: string;
+    lat?: number;
+    lon?: number;
+    surface?: 'road' | 'gravel';
+  };
 
   if (typeof lat !== 'number' || typeof lon !== 'number') {
     res.status(400).json({ error: 'Chybí výchozí bod (lat, lon).' });
@@ -52,9 +58,17 @@ routeRouter.post('/generate', async (req, res) => {
     }
 
     const start = { lat, lon };
-    const routeRequest = buildRouteRequest(workout, start, readiness);
+    const routeRequest = buildRouteRequest(workout, start, readiness, surface === 'gravel' ? 'gravel' : 'road');
     const mapy = new MapyClient(config.mapyApiKey);
-    const route = await generateLoopRoute(routeRequest, mapy);
+
+    // One live OSM lookup (private/no-access ways, gates) covering the
+    // whole area this request could plausibly touch, reused for both the
+    // main route and the smaller interval-repeat loop below - see
+    // excludedZones.ts for why this degrades gracefully instead of
+    // failing the request if Overpass is slow/unreachable.
+    const exclusionChecker = await buildExclusionChecker(start, routeRequest.targetDistanceKm / (2 * Math.PI));
+
+    const route = await generateLoopRoute({ ...routeRequest, exclusionChecker }, mapy);
     const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);
 
     // For an interval workout, also propose a short loop sized to one
@@ -71,6 +85,8 @@ routeRouter.post('/generate', async (req, res) => {
           targetDistanceKm: routeRequest.repeatSegmentKm,
           sport: routeRequest.sport,
           preferFlat: routeRequest.preferFlat,
+          surface: routeRequest.surface,
+          exclusionChecker,
         },
         mapy,
       );

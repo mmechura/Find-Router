@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Find-Router</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -34,6 +35,11 @@
           <button id="locate-btn" type="button">Použít moji polohu</button>
         </div>
       </label>
+      <fieldset id="surface-field">
+        <legend>Povrch (jen pro kolo)</legend>
+        <label class="inline"><input type="radio" name="surface" value="road" checked /> Silnice (galusky)</label>
+        <label class="inline"><input type="radio" name="surface" value="gravel" /> Gravel (nezpevněné ok)</label>
+      </fieldset>
       <button id="generate-btn" type="button" class="primary">Vygenerovat trasu</button>
       <p id="status-message"></p>
     </section>

@@ -8,7 +8,7 @@ export interface SpurInfo {
   worstSpurKm: number;
 }
 
-const MATCH_TOLERANCE_KM = 0.02; // ~20m - absorbs GPS/snap noise, not a real fork in the road
+const MATCH_TOLERANCE_KM = 0.035; // ~35m - absorbs GPS/snap noise and opposite-side-of-road offsets
 
 /**
  * Finds "dead-end" out-and-back detours in a routed path: a stretch where the
@@ -23,7 +23,7 @@ const MATCH_TOLERANCE_KM = 0.02; // ~20m - absorbs GPS/snap noise, not a real fo
  * around a turnaround point at k. A legitimate loop (going around a block)
  * does not produce this pattern - only a genuine "there and back" does.
  */
-export function findBacktrackSpurs(coords: LatLon[], minMatchPoints = 2): SpurInfo {
+export function findBacktrackSpurs(coords: LatLon[], minMatchPoints = 1): SpurInfo {
   let totalSpurKm = 0;
   let worstSpurKm = 0;
   let skipUntil = -1;

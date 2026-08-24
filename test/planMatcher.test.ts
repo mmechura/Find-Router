@@ -113,4 +113,15 @@ describe('buildRouteRequest', () => {
     const req = buildRouteRequest(workout, start);
     expect(req.repeatSegmentKm).toBeUndefined();
   });
+
+  it('passes surface through for bike workouts', () => {
+    const workout: PlannedWorkout = { id: '9', date: '2026-08-24', name: 'Endurance ride', type: 'Ride', distanceM: 40000 };
+    expect(buildRouteRequest(workout, start, undefined, 'gravel').surface).toBe('gravel');
+    expect(buildRouteRequest(workout, start, undefined, 'road').surface).toBe('road');
+  });
+
+  it('ignores surface for run workouts (not a bike-only concept)', () => {
+    const workout: PlannedWorkout = { id: '10', date: '2026-08-24', name: 'Easy run', type: 'Run', distanceM: 8000 };
+    expect(buildRouteRequest(workout, start, undefined, 'gravel').surface).toBeUndefined();
+  });
 });
