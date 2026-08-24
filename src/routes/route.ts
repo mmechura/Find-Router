@@ -66,7 +66,11 @@ routeRouter.post('/generate', async (req, res) => {
     // main route and the smaller interval-repeat loop below - see
     // excludedZones.ts for why this degrades gracefully instead of
     // failing the request if Overpass is slow/unreachable.
-    const exclusionChecker = await buildExclusionChecker(start, routeRequest.targetDistanceKm / (2 * Math.PI));
+    const exclusionChecker = await buildExclusionChecker(
+      start,
+      routeRequest.targetDistanceKm / (2 * Math.PI),
+      routeRequest.sport,
+    );
 
     const route = await generateLoopRoute({ ...routeRequest, exclusionChecker }, mapy);
     const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);

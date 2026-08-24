@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@upstash/redis": "^1.38.2",
     "dotenv": "^16.4.5",
     "express": "^4.19.2"
   },

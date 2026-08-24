@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { destinationPoint, haversineDistanceKm, mulberry32 } from '../src/routing/geo.js';
+import { destinationPoint, distancePointToSegmentKm, haversineDistanceKm, mulberry32 } from '../src/routing/geo.js';
 
 describe('haversineDistanceKm', () => {
   it('returns ~0 for identical points', () => {
@@ -28,6 +28,33 @@ describe('destinationPoint', () => {
     const dest = destinationPoint(start, 0, 10);
     expect(dest.lat).toBeGreaterThan(start.lat);
     expect(dest.lon).toBeCloseTo(start.lon, 3);
+  });
+});
+
+describe('distancePointToSegmentKm', () => {
+  it('is ~0 for a point on the segment', () => {
+    const a = { lat: 50.0, lon: 14.0 };
+    const b = { lat: 50.01, lon: 14.0 };
+    const mid = { lat: 50.005, lon: 14.0 };
+    expect(distancePointToSegmentKm(mid, a, b)).toBeCloseTo(0, 2);
+  });
+
+  it('clamps to the nearest endpoint beyond the segment', () => {
+    const a = { lat: 50.0, lon: 14.0 };
+    const b = { lat: 50.01, lon: 14.0 };
+    const beyondB = { lat: 50.02, lon: 14.0 };
+    // Flat-plane approximation vs. the exact great-circle distance - close
+    // enough at the small buffers this is actually used for.
+    expect(distancePointToSegmentKm(beyondB, a, b)).toBeCloseTo(haversineDistanceKm(beyondB, b), 1);
+  });
+
+  it('measures perpendicular distance off to the side', () => {
+    const a = { lat: 50.0, lon: 14.0 };
+    const b = { lat: 50.01, lon: 14.0 };
+    const east = { lat: 50.005, lon: 14.001 };
+    const d = distancePointToSegmentKm(east, a, b);
+    expect(d).toBeGreaterThan(0.05);
+    expect(d).toBeLessThan(0.1);
   });
 });
 

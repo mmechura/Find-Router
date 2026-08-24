@@ -38,10 +38,10 @@ describe('buildExclusionChecker', () => {
       text: async () => '',
     })) as unknown as typeof fetch;
 
-    const checker = await buildExclusionChecker({ lat: 50.2, lon: 15.2 }, 5, fetchImpl);
+    const checker = await buildExclusionChecker({ lat: 50.2, lon: 15.2 }, 5, 'run', fetchImpl);
     expect(fetchImpl).toHaveBeenCalledOnce();
 
-    // Inside the newly fetched OSM way's (buffered) bounding box.
+    // Near the newly fetched OSM way's actual line (within the buffer).
     expect(checker.check([{ lat: 50.2002, lon: 15.2002 }])).not.toBeNull();
     // Still catches the static Třinecké železárny box too.
     expect(checker.check([{ lat: 49.685, lon: 18.63 }])).not.toBeNull();
@@ -54,9 +54,52 @@ describe('buildExclusionChecker', () => {
       throw new Error('network down');
     }) as unknown as typeof fetch;
 
-    const checker = await buildExclusionChecker({ lat: 50.2, lon: 15.2 }, 5, fetchImpl);
+    const checker = await buildExclusionChecker({ lat: 50.2, lon: 15.2 }, 5, 'run', fetchImpl);
     // Doesn't throw, and the static zone still works.
     expect(checker.check([{ lat: 49.685, lon: 18.63 }])).not.toBeNull();
     expect(checker.check([{ lat: 10, lon: 10 }])).toBeNull();
+  });
+
+  it('does not flag points far from a long, diagonal way just because they share its bounding box', async () => {
+    // A long diagonal "motorway" from one corner of the area to the other -
+    // a bounding-box check would wrongly treat the whole rectangle between
+    // the two ends as excluded; a polyline check should not.
+    const fetchImpl = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        elements: [
+          {
+            type: 'way',
+            id: 999,
+            tags: { highway: 'motorway' },
+            geometry: [
+              { lat: 50.0, lon: 15.0 },
+              { lat: 50.2, lon: 15.2 },
+            ],
+          },
+        ],
+      }),
+      text: async () => '',
+    })) as unknown as typeof fetch;
+
+    const checker = await buildExclusionChecker({ lat: 50.1, lon: 15.1 }, 5, 'bike', fetchImpl);
+    // Near the far corner of the bounding box, but nowhere near the actual line.
+    expect(checker.check([{ lat: 50.0, lon: 15.2 }])).toBeNull();
+    // Actually on the line.
+    expect(checker.check([{ lat: 50.1, lon: 15.1 }])).not.toBeNull();
+  });
+
+  it('asks Overpass to also exclude motor roads for bike but not run', async () => {
+    let capturedBody = '';
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = String(init?.body ?? '');
+      return { ok: true, json: async () => ({ elements: [] }), text: async () => '' };
+    }) as unknown as typeof fetch;
+
+    await buildExclusionChecker({ lat: 50.2, lon: 15.2 }, 5, 'bike', fetchImpl);
+    expect(capturedBody).toContain('motorway');
+
+    await buildExclusionChecker({ lat: 50.2, lon: 15.2 }, 5, 'run', fetchImpl);
+    expect(capturedBody).not.toContain('motorway');
   });
 });

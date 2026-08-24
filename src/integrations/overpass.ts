@@ -15,12 +15,23 @@ export interface RestrictedWay {
   points: LatLon[];
 }
 
+export interface FetchRestrictedWaysOptions {
+  /** Also fetch motorways/expressways and bicycle=no roads - for bike routing, never for run. */
+  excludeMotorRoads?: boolean;
+}
+
 /**
- * Queries OpenStreetMap (via the public Overpass API) for ways tagged as
- * private/no-access or gated within `bbox` - fences, private industrial
- * grounds, barriers, closed roads, etc. This is what lets the router avoid
- * "you're not allowed in there" areas generically, instead of relying on a
- * hand-maintained list of places someone happened to report.
+ * Queries OpenStreetMap (via the public Overpass API) for ways within
+ * `bbox` that a route should never use:
+ * - private/no-access or gated: fences, private industrial grounds,
+ *   barriers, closed roads, etc. - lets the router avoid "you're not
+ *   allowed in there" areas generically instead of relying on a
+ *   hand-maintained list of places someone happened to report;
+ * - (bike only, `excludeMotorRoads`) motorways/expressways
+ *   (dálnice/rychlostní silnice) and anything explicitly tagged
+ *   `bicycle=no` - legal-to-drive-on-with-a-car roads that a bike has no
+ *   business being routed onto, regardless of what Mapy.com's own
+ *   `bike_road` profile considers acceptable.
  *
  * Best-effort by design: Overpass is a free, rate-limited public service,
  * so callers should treat a failure here as "no dynamic data available"
@@ -30,13 +41,19 @@ export interface RestrictedWay {
 export async function fetchRestrictedWays(
   bbox: BoundingBox,
   fetchImpl: typeof fetch = fetch,
+  options: FetchRestrictedWaysOptions = {},
 ): Promise<RestrictedWay[]> {
   const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  const motorRoadClauses = options.excludeMotorRoads
+    ? `
+  way["highway"~"^(motorway|motorway_link|trunk|trunk_link)$"](${box});
+  way["bicycle"="no"](${box});`
+    : '';
   const query = `[out:json][timeout:15];
 (
   way["access"~"^(private|no)$"](${box});
   way["barrier"="gate"]["access"~"^(private|no)$"](${box});
-  way["landuse"="industrial"]["access"~"^(private|no)$"](${box});
+  way["landuse"="industrial"]["access"~"^(private|no)$"](${box});${motorRoadClauses}
 );
 out geom;`;
 

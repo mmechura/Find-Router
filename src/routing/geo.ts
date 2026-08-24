@@ -56,3 +56,27 @@ export function mulberry32(seed: number): () => number {
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
+
+/**
+ * Shortest distance from `point` to the segment a-b, in km. Uses a flat
+ * (equirectangular) approximation around `a` - accurate enough for the
+ * tens-of-meters buffers this is used for, not meant for long distances.
+ */
+export function distancePointToSegmentKm(point: LatLon, a: LatLon, b: LatLon): number {
+  const kmPerDegLat = 110.574;
+  const kmPerDegLon = 111.32 * Math.cos(toRad(a.lat));
+  const toXY = (p: LatLon) => ({ x: (p.lon - a.lon) * kmPerDegLon, y: (p.lat - a.lat) * kmPerDegLat });
+
+  const A = { x: 0, y: 0 };
+  const B = toXY(b);
+  const P = toXY(point);
+
+  const abx = B.x - A.x;
+  const aby = B.y - A.y;
+  const lenSq = abx * abx + aby * aby;
+  const t = lenSq === 0 ? 0 : clamp((P.x * abx + P.y * aby) / lenSq, 0, 1);
+  const closestX = A.x + t * abx;
+  const closestY = A.y + t * aby;
+
+  return Math.hypot(P.x - closestX, P.y - closestY);
+}

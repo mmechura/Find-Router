@@ -28,6 +28,13 @@ export const config = {
   // reachable from the internet, since this app has no user accounts of
   // its own and holds your Strava/Mapy.com/intervals.icu access.
   appPassword: optional('APP_PASSWORD'),
+
+  // Route archive persistence (see routeStore.ts). App-specific names
+  // rather than whatever a given host's KV/Upstash integration happens to
+  // call its own env vars (that naming has shifted over time) - copy the
+  // REST URL/token it generates into these two.
+  routesKvUrl: optional('ROUTES_KV_REST_API_URL'),
+  routesKvToken: optional('ROUTES_KV_REST_API_TOKEN'),
 };
 
 export type AppConfig = typeof config;
