@@ -38,6 +38,18 @@ heatmapRouter.get('/heatmap', async (req, res) => {
 
     res.json({ tracks, activityCount: activities.length });
   } catch (err) {
-    res.status(502).json({ error: (err as Error).message });
+    const message = (err as Error).message;
+    // A token issued before `activity:read_all` was part of the requested
+    // scope (or where the user unchecked that permission on Strava's
+    // consent screen) authenticates fine but 401s on this specific call -
+    // surface that as an actionable message instead of the raw Strava JSON.
+    if (message.includes('(401)') && message.includes('activity:read_permission')) {
+      res.status(401).json({
+        error:
+          'Strava token nemá oprávnění číst aktivity. Odpoj a znovu připoj Strava v Nastavení a na obrazovce se souhlasem nech zaškrtnuté "View data about your activities".',
+      });
+      return;
+    }
+    res.status(502).json({ error: message });
   }
 });

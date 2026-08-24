@@ -28,7 +28,12 @@ export function buildStravaAuthorizeUrl(
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    approval_prompt: 'auto',
+    // 'force' (not 'auto') so Strava always re-shows the per-permission
+    // consent checklist on reconnect — with 'auto' it can silently skip
+    // straight to redirecting back with a token from an earlier, narrower
+    // grant, and the missing activity:read_all permission only surfaces
+    // later as a 401 on the first API call that needs it.
+    approval_prompt: 'force',
     scope: 'read,activity:read_all,profile:read_all',
     state,
   });
