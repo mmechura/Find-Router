@@ -6,7 +6,7 @@ import { MapyClient, buildMapyPlannerUrl } from '../integrations/mapy.js';
 import { StravaClient } from '../integrations/strava.js';
 import { getValidStravaAccessToken } from '../stravaSession.js';
 import { computeReadiness } from '../routing/readiness.js';
-import { buildRouteRequest, mapIntervalsTypeToSport } from '../routing/planMatcher.js';
+import { buildRouteRequest, estimateDurationS, mapIntervalsTypeToSport } from '../routing/planMatcher.js';
 import { generateLoopRoute } from '../routing/loopRouteGenerator.js';
 import { buildExclusionChecker } from '../routing/excludedZones.js';
 import { buildRoadSnapper } from '../routing/roadSnapper.js';
@@ -182,6 +182,7 @@ routeRouter.post('/generate', async (req, res) => {
       },
       mapy,
     );
+    route.durationS = estimateDurationS(route.actualDistanceKm, routeRequest.paceKmh);
     const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);
 
     // For an interval workout, also propose a short loop sized to one
@@ -211,6 +212,7 @@ routeRouter.post('/generate', async (req, res) => {
         },
         mapy,
       );
+      repeatRoute.durationS = estimateDurationS(repeatRoute.actualDistanceKm, routeRequest.paceKmh);
       repeatPlannerUrl = buildMapyPlannerUrl(repeatRoute.waypoints, repeatRoute.profile);
     }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRouteRequest, mapIntervalsTypeToSport } from '../src/routing/planMatcher.js';
+import { buildRouteRequest, estimateDurationS, mapIntervalsTypeToSport } from '../src/routing/planMatcher.js';
 import type { PlannedWorkout } from '../src/types.js';
 
 const start = { lat: 50.0755, lon: 14.4378 };
@@ -14,6 +14,20 @@ describe('mapIntervalsTypeToSport', () => {
   it('defaults everything else to run', () => {
     expect(mapIntervalsTypeToSport('Run')).toBe('run');
     expect(mapIntervalsTypeToSport('TrailRun')).toBe('run');
+  });
+});
+
+describe('estimateDurationS', () => {
+  it('derives duration from the actual chosen pace, not a fixed assumption', () => {
+    // The exact bug reported: 25km at 28.1 km/h should read ~53min, not
+    // whatever a routing profile's own baked-in speed model would say.
+    expect(estimateDurationS(25, 28.1)).toBeCloseTo(3203, -1); // ~53.4 min
+  });
+
+  it('scales linearly with distance and inversely with pace', () => {
+    expect(estimateDurationS(20, 10)).toBe(7200); // 2h
+    expect(estimateDurationS(10, 10)).toBe(3600); // 1h
+    expect(estimateDurationS(20, 20)).toBe(3600); // 1h
   });
 });
 

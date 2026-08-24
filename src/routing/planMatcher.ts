@@ -51,6 +51,18 @@ function estimateDistanceKm(movingTimeS: number, paceKmh: number): number {
 }
 
 /**
+ * Mapy.com's own route duration estimate assumes a fixed, baked-in speed
+ * per routing profile that has nothing to do with the rider/runner's actual
+ * chosen average speed - displaying it as-is produced results like "111 min"
+ * for a route sized and paced for a 50-minute workout. The route's distance
+ * is already derived from this same paceKmh (see buildRouteRequest above),
+ * so the displayed duration should be too, for consistency.
+ */
+export function estimateDurationS(distanceKm: number, paceKmh: number): number {
+  return Math.round((distanceKm / paceKmh) * 3600);
+}
+
+/**
  * Turns a planned workout (from intervals.icu) plus a readiness signal (from
  * recent Strava activity) into a concrete route plan.
  *

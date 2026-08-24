@@ -232,6 +232,16 @@ silnici, a appka neměla ponětí o skutečném terénu. Řeší se to takhle:
    `POST /api/route/preview` (bez volání Mapy.com/Overpassu — je to čistě
    aritmetika z `planMatcher.ts`, takže je to levné a rychlé i při psaní
    do pole).
+   - **Odhadovaný čas trasy taky počítá appka, ne Mapy.com.** Mapy.com
+     v odpovědi routing API vrací vlastní odhad doby jízdy/běhu, ale ten
+     má napevno zabudovanou rychlost pro daný profil, nesouvisející s
+     rychlostí, kterou si zvolíš — to způsobovalo, že appka klidně
+     ukázala "111 min" u trasy naplánované a vypočtené na 50minutový
+     trénink při 28 km/h (25 km při 28 km/h je ~53 min, ne 111).
+     `route.ts` proto po vygenerování trasy přepíše `durationS` vlastním
+     výpočtem `estimateDurationS()` (`actualDistanceKm / paceKmh`) —
+     stejnou rychlostí, kterou appka použila i pro cílovou vzdálenost,
+     takže si čísla navzájem odpovídají.
 
 **Vědomě zjednodušeno oproti "dokonalému" řešení**: appka pořád nestaví
 skutečný graf silniční sítě a nehledá v něm okruh (to by bylo o řád víc
