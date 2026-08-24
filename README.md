@@ -63,44 +63,54 @@ Appka poběží na `http://localhost:3000`.
 
 ## Nasazení (aby appka fungovala odkudkoli, ne jen na `localhost`)
 
-Appka je dockerizovaná a má připravený `render.yaml`, takže nejrychlejší cesta
-je [Render.com](https://render.com) (má fungující free tier). Nemám k tvému
-Render účtu přístup, takže tohle je potřeba proklikat ručně — je to ale
-prakticky jednorázová záležitost:
+### Vercel
 
-1. Založ si účet na render.com a propoj ho se svým GitHub účtem.
-2. **New +** → **Blueprint** → vyber repozitář `mmechura/Find-Router` a
-   branch. Render najde `render.yaml` a připraví službu automaticky
-   (`runtime: docker`).
-3. Při vytváření vyplň proměnné prostředí: `APP_PASSWORD` (vymysli si silné
-   heslo — chrání to appku i tvoje API klíče, appka nemá vlastní účty),
-   `MAPY_API_KEY`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`,
-   `INTERVALS_API_KEY`, `INTERVALS_ATHLETE_ID`. `STRAVA_REDIRECT_URI` zatím
-   nech prázdné/placeholder — vyplníš ho v kroku 5.
-4. Deploy. Render ti přidělí veřejnou adresu typu
-   `https://find-router-xxxx.onrender.com`.
-5. Nastav `STRAVA_REDIRECT_URI=https://find-router-xxxx.onrender.com/auth/strava/callback`
-   (proměnná prostředí v Render → uloží se, appka se restartuje) a stejnou
-   doménu (bez `https://` a bez cesty) přidej do Strava aplikace jako
-   *Authorization Callback Domain* na <https://www.strava.com/settings/api>.
-6. Otevři appku na veřejné adrese (přihlásíš se heslem z `APP_PASSWORD`),
+Appka běží jako jedna serverless funkce (`api/index.ts` → Express app z
+`src/app.ts`, viz `vercel.json`), takže na Vercelu jde nasadit bez Dockeru.
+Nemám k tvému Vercel účtu přístup, takže proklikání je na tobě — je to ale
+v podstatě jednorázová věc:
+
+1. Na [vercel.com](https://vercel.com) → **Add New** → **Project** → vyber
+   repozitář `mmechura/Find-Router` a branch
+   `claude/route-planning-app-maps-pbaaor` (nebo hlavní větev, pokud tam
+   změny domergneš). Framework preset nech "Other" — build krok appka
+   nepotřebuje.
+2. V **Environment Variables** přidej: `APP_PASSWORD` (appka nemá vlastní
+   účty, tohle jediné heslo ji chrání i s tvými API klíči), `MAPY_API_KEY`,
+   `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, `INTERVALS_API_KEY`,
+   `INTERVALS_ATHLETE_ID`. `STRAVA_REDIRECT_URI` zatím nech prázdné/cokoliv —
+   doplníš ho v kroku 4.
+3. Deploy. Vercel přidělí adresu typu `https://find-router-xxxx.vercel.app`.
+4. Nastav proměnnou `STRAVA_REDIRECT_URI=https://find-router-xxxx.vercel.app/auth/strava/callback`
+   (Project → Settings → Environment Variables → redeploy, aby se projevila)
+   a stejnou doménu (bez `https://` a bez cesty) přidej do Strava aplikace
+   jako *Authorization Callback Domain* na <https://www.strava.com/settings/api>.
+5. Otevři appku na veřejné adrese (přihlásíš se heslem z `APP_PASSWORD`),
    klikni **Připojit Strava**. Po odsouhlasení appka zobrazí **refresh
-   token** — zkopíruj ho do proměnné prostředí `STRAVA_REFRESH_TOKEN` v
-   Render (bez toho appka nemá trvalý disk, takže by po každém uspání
-   ztratila spojení a musela by ses přihlašovat ke Stravě znovu).
+   token** — zkopíruj ho do proměnné `STRAVA_REFRESH_TOKEN` na Vercelu a
+   redeployni. **Tohle je na Vercelu nutné, ne jen doporučené**: serverless
+   funkce běží na read-only souborovém systému, appka tam nemá kam uložit
+   token lokálně, takže bez `STRAVA_REFRESH_TOKEN` by se Strava po každém
+   "studeném startu" odpojila.
 
-Od téhle chvíle appka na Render URL přežije restart i redeploy bez nutnosti
-cokoliv znovu propojovat. Jediná daň za free tier: služba po ~15 minutách
-nečinnosti "usne" a první request po probuzení trvá desítky sekund — pokud
-ti to vadí, přejdi na placený plán, appka na tom nic nemění.
+Od téhle chvíle appka na Vercel URL přežije redeploy i výpadky bez nutnosti
+cokoliv znovu propojovat. Jediné, na co si dát pozor: appka pro jednu trasu
+volá Mapy.com Routing API i vícekrát za sebou (iterativní doladění délky +
+případný druhý okruh na intervaly) — na Hobby plánu s limitem 10 s na
+funkci by to při hodně pomalé odezvě Mapy.com teoreticky mohlo stačit
+narazit na strop; kdyby se to dělo, dej vědět, jde to zrychlit
+paralelizací nebo snížením počtu iterací v `loopRouteGenerator.ts`.
 
-### Alternativa: vlastní/jiný hosting
+### Alternativa: Render / Docker / vlastní hosting
 
-`Dockerfile` je běžný dvoufázový Node build (`docker build -t find-router .`
-a `docker run -p 3000:3000 --env-file .env find-router`), takže jde stejně
-snadno nasadit na Fly.io, Railway, vlastní VPS apod. — jen pohlídej, že
-`STRAVA_REDIRECT_URI` odpovídá veřejné doméně a že máš nastavené proměnné
-prostředí ze sekce Instalace výše (+ `APP_PASSWORD`).
+`Dockerfile` + `render.yaml` jsou taky připravené (spouští `dist/server.js`,
+tedy klasický dlouho běžící proces, ne serverless funkci) — pro Render
+platí stejný postup jako výše, jen v Render → **New +** → **Blueprint**
+a proměnné prostředí se nastavují tam. `docker build -t find-router .` a
+`docker run -p 3000:3000 --env-file .env find-router` jde stejně snadno
+nasadit na Fly.io, Railway, vlastní VPS apod. — na hostingu s trvalým
+diskem je `STRAVA_REFRESH_TOKEN` jen volitelná pojistka, appka si tokeny
+umí ukládat sama do `data/strava-tokens.json`.
 
 ## Vývoj
 

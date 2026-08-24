@@ -60,6 +60,10 @@
   čtení aktivit.
 - `src/integrations/intervals.ts` — čtení plánovaných tréninků
   (kalendářní eventy s `category=WORKOUT`).
+- `src/app.ts` — sestavení Express aplikace (middleware + routery), bez
+  `app.listen()`. `src/server.ts` ho spustí jako klasický proces (lokální
+  vývoj, Docker); `api/index.ts` ho místo toho exportuje jako Vercel
+  serverless funkci (viz `vercel.json`) — stejný Express app běží na obou.
 
 ## Jak appka pracuje s intervaly
 
