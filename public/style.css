@@ -1,63 +1,268 @@
 :root {
   color-scheme: light dark;
-  font-family: system-ui, sans-serif;
+
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --border: #e0e2e8;
+  --text: #1b1e27;
+  --text-muted: #6b7280;
+  --accent-a: #f5a623;
+  --accent-b: #e8536b;
+  --accent-c: #3b6fd6;
+  --accent-grad: linear-gradient(135deg, var(--accent-a), var(--accent-b) 55%, var(--accent-c));
+  --primary: #1c6f3a;
+  --primary-contrast: #ffffff;
+  --danger: #c0392b;
+  --shadow: 0 1px 2px rgba(20, 20, 30, 0.06), 0 6px 16px rgba(20, 20, 30, 0.06);
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12141c;
+    --surface: #1b1e29;
+    --surface-2: #232735;
+    --border: #2d3140;
+    --text: #eef0f4;
+    --text-muted: #9aa0b0;
+    --primary: #35b46a;
+    --primary-contrast: #08170e;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px rgba(0, 0, 0, 0.35);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--text);
 }
 
 body {
-  max-width: 720px;
-  margin: 0 auto;
-  padding: 1rem 1.25rem 3rem;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  padding-bottom: 3rem;
 }
 
-header p {
-  color: #666;
+/* ---------- App bar + hamburger nav ---------- */
+
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.appbar-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  font-size: 1.05rem;
+  background: var(--accent-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.appbar-title img {
+  border-radius: 6px;
+}
+
+.icon-btn {
+  border: none;
+  background: transparent;
+  padding: 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.icon-btn:hover {
+  background: var(--surface-2);
+}
+
+.hamburger,
+.hamburger::before,
+.hamburger::after {
+  display: block;
+  width: 20px;
+  height: 2px;
+  background: var(--text);
+  border-radius: 2px;
+  transition: transform 0.15s ease;
+}
+
+.hamburger {
+  position: relative;
+}
+
+.hamburger::before,
+.hamburger::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.hamburger::before {
+  top: -6px;
+}
+
+.hamburger::after {
+  top: 6px;
+}
+
+.nav-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 15, 0.45);
+  z-index: 25;
+}
+
+.side-nav {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 30;
+  width: min(280px, 80vw);
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 4.5rem 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  box-shadow: var(--shadow);
+}
+
+.nav-link {
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.nav-link:hover {
+  background: var(--surface-2);
+}
+
+.nav-link.active {
+  background: var(--surface-2);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 0 var(--accent-b);
+}
+
+/* `display: flex` above has the same specificity as the UA's `[hidden] {
+   display: none }` rule, so without this override the "hidden" attribute
+   would be silently ignored and the nav would stay visible (and clickable
+   through) even when closed. */
+.side-nav[hidden] {
+  display: none;
+}
+
+/* ---------- Layout ---------- */
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 2rem;
+}
+
+.view {
+  display: none;
+}
+
+.view.active {
+  display: block;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1.25rem;
+  margin-bottom: 1.1rem;
+}
+
+.panel h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}
+
+.panel h3 {
+  font-size: 0.95rem;
+  margin: 1rem 0 0.5rem;
+}
+
+/* ---------- Forms ---------- */
+
+label {
+  display: block;
+  margin: 0.85rem 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+input {
+  display: block;
+  margin-top: 0.3rem;
+  padding: 0.55rem 0.65rem;
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+input:focus {
+  outline: 2px solid var(--accent-c);
+  outline-offset: 1px;
 }
 
 fieldset {
-  border: 1px solid #ccc;
-  border-radius: 6px;
-  margin: 0.75rem 0;
-  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0.85rem 0;
+  padding: 0.6rem 0.8rem;
+}
+
+legend {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0 0.3rem;
 }
 
 label.inline {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
+  gap: 0.35rem;
   margin-right: 1rem;
   font-size: 0.9rem;
+  color: var(--text);
 }
 
 label.inline input {
   display: inline;
   width: auto;
-}
-
-.panel {
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  padding: 1rem 1.25rem;
-  margin-bottom: 1.25rem;
-}
-
-.panel h2 {
   margin-top: 0;
-  font-size: 1.05rem;
-}
-
-label {
-  display: block;
-  margin: 0.75rem 0;
-  font-size: 0.9rem;
-}
-
-input {
-  display: block;
-  margin-top: 0.25rem;
-  padding: 0.4rem;
-  font-size: 1rem;
-  width: 100%;
-  box-sizing: border-box;
 }
 
 .row {
@@ -70,79 +275,127 @@ input {
   flex: 1;
 }
 
+/* ---------- Buttons ---------- */
+
 button,
 .button {
   display: inline-block;
-  padding: 0.55rem 1rem;
-  border-radius: 6px;
-  border: 1px solid #888;
-  background: #f3f3f3;
+  padding: 0.6rem 1.1rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
   cursor: pointer;
   text-decoration: none;
-  color: inherit;
   font-size: 0.95rem;
+  font-weight: 500;
+}
+
+button:hover,
+.button:hover {
+  filter: brightness(0.97);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 
 button.primary,
 .button.primary {
-  background: #1c6f3a;
-  border-color: #1c6f3a;
-  color: white;
+  background: var(--accent-grad);
+  border: none;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
 }
+
+#generate-btn {
+  width: 100%;
+  padding: 0.8rem 1.1rem;
+  font-size: 1rem;
+  margin-top: 0.5rem;
+}
+
+/* ---------- Maps ---------- */
 
 #map,
-#repeat-map {
+#repeat-map,
+#archive-map,
+#archive-repeat-map {
   height: 320px;
-  border-radius: 6px;
+  border-radius: 10px;
   margin: 0.75rem 0;
+  border: 1px solid var(--border);
 }
 
+/* ---------- Misc ---------- */
+
 .hint {
-  font-size: 0.85rem;
-  color: #666;
+  display: block;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 0.3rem;
+}
+
+#status-message {
+  font-size: 0.9rem;
+  min-height: 1.2em;
 }
 
 dl {
   display: grid;
   grid-template-columns: max-content 1fr;
-  gap: 0.25rem 0.75rem;
+  gap: 0.3rem 0.9rem;
   font-size: 0.9rem;
+  margin: 0;
 }
 
 dt {
   font-weight: 600;
+  color: var(--text-muted);
 }
 
 dd {
   margin: 0;
 }
 
-.calendar-list {
+.option-list {
   list-style: none;
   margin: 0.5rem 0;
   padding: 0;
-  border: 1px solid #ddd;
-  border-radius: 6px;
-  max-height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  max-height: 300px;
   overflow-y: auto;
+  background: var(--surface);
 }
 
-.calendar-list li {
-  padding: 0.5rem 0.75rem;
-  border-bottom: 1px solid #eee;
+.option-list li {
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
   font-size: 0.9rem;
 }
 
-.calendar-list li:last-child {
+.option-list li:last-child {
   border-bottom: none;
 }
 
-.calendar-list li:hover {
-  background: rgba(28, 111, 58, 0.08);
+.option-list li:hover {
+  background: var(--surface-2);
 }
 
-.calendar-list .muted {
-  color: #888;
-  font-size: 0.85rem;
+.option-list .muted {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  margin-left: 0.4rem;
 }

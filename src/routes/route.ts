@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 import { IntervalsClient } from '../integrations/intervals.js';
 import { MapyClient, buildMapyPlannerUrl } from '../integrations/mapy.js';
@@ -9,6 +10,7 @@ import { buildRouteRequest, mapIntervalsTypeToSport } from '../routing/planMatch
 import { generateLoopRoute } from '../routing/loopRouteGenerator.js';
 import { buildExclusionChecker } from '../routing/excludedZones.js';
 import { buildRoadSnapper } from '../routing/roadSnapper.js';
+import { getRouteStore } from '../routing/routeStore.js';
 import { MapyElevationClient } from '../integrations/elevation.js';
 import { RELAXED_MAX_GRADE_PERCENT, STRICT_MAX_GRADE_PERCENT, type GradeWindow } from '../routing/elevationProfile.js';
 import type { FatigueReadiness } from '../types.js';
@@ -189,6 +191,26 @@ routeRouter.post('/generate', async (req, res) => {
       repeatPlannerUrl = buildMapyPlannerUrl(repeatRoute.waypoints, repeatRoute.profile);
     }
 
+    const storedRoute = {
+      id: randomUUID(),
+      createdAt: new Date().toISOString(),
+      workoutDate,
+      workoutName: workout.name,
+      sport: routeRequest.sport,
+      targetDistanceKm: routeRequest.targetDistanceKm,
+      route,
+      plannerUrl,
+      repeatRoute,
+      repeatPlannerUrl,
+    };
+    try {
+      await getRouteStore().save(storedRoute);
+    } catch (err) {
+      // The archive is a convenience, not a reason to fail a successful
+      // generation - log and move on.
+      console.warn('Failed to save route to archive:', (err as Error).message);
+    }
+
     res.json({
       workout,
       readiness,
@@ -197,6 +219,7 @@ routeRouter.post('/generate', async (req, res) => {
       plannerUrl,
       repeatRoute,
       repeatPlannerUrl,
+      archivedId: storedRoute.id,
     });
   } catch (err) {
     res.status(err instanceof Error && err.message.includes('.env') ? 500 : 502).json({ error: (err as Error).message });

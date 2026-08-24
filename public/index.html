@@ -5,108 +5,154 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Find-Router</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header>
-    <h1>Find-Router</h1>
-    <p>Vygeneruje trasu na míru dnešnímu tréninku z intervals.icu, s ohledem na tvůj aktuální stav ze Strava.</p>
+  <div id="nav-backdrop" class="nav-backdrop" hidden></div>
+
+  <header class="appbar">
+    <button id="menu-btn" class="icon-btn" type="button" aria-label="Menu" aria-expanded="false">
+      <span class="hamburger"></span>
+    </button>
+    <span class="appbar-title">
+      <img src="favicon.svg" alt="" width="24" height="24" />
+      Find-Router
+    </span>
   </header>
 
+  <nav id="side-nav" class="side-nav" hidden>
+    <button class="nav-link active" type="button" data-view="home">Nová trasa</button>
+    <button class="nav-link" type="button" data-view="calendar">Kalendář tréninků</button>
+    <button class="nav-link" type="button" data-view="archive">Archiv tras</button>
+    <button class="nav-link" type="button" data-view="settings">Nastavení</button>
+  </nav>
+
   <main>
-    <section class="panel">
-      <h2>1. Strava</h2>
-      <p id="strava-status">Zjišťuji stav připojení…</p>
-      <a id="strava-connect" href="/auth/strava/login" class="button">Připojit Strava</a>
+    <!-- === Nová trasa === -->
+    <section class="view active" id="view-home" data-view="home">
+      <section class="panel">
+        <h2>Trénink a výchozí bod</h2>
+        <label>
+          Datum tréninku
+          <input type="date" id="date-input" />
+        </label>
+        <label>
+          Start - adresa
+          <div class="row">
+            <input type="text" id="address-input" placeholder="např. Nádražní 5, Třinec" />
+            <button id="address-search-btn" type="button">Najít</button>
+          </div>
+        </label>
+        <ul id="address-results" class="option-list" hidden></ul>
+        <label>
+          Start (lat, lon)
+          <div class="row">
+            <input type="number" step="0.000001" id="lat-input" placeholder="50.075500" />
+            <input type="number" step="0.000001" id="lon-input" placeholder="14.437800" />
+            <button id="locate-btn" type="button">Použít moji polohu</button>
+          </div>
+          <span class="hint">Vyplní se automaticky po nalezení adresy, nebo je zadej ručně.</span>
+        </label>
+        <fieldset id="surface-field">
+          <legend>Povrch (jen pro kolo)</legend>
+          <label class="inline"><input type="radio" name="surface" value="road" checked /> Silnice (galusky)</label>
+          <label class="inline"><input type="radio" name="surface" value="gravel" /> Gravel (nezpevněné ok)</label>
+        </fieldset>
+        <label>
+          Průměrná rychlost (km/h)
+          <input type="number" step="0.1" min="1" id="speed-input" placeholder="doplní se automaticky" />
+          <span class="hint" id="speed-source-hint"></span>
+        </label>
+        <button id="generate-btn" type="button" class="primary">Vygenerovat trasu</button>
+        <p id="status-message"></p>
+      </section>
+
+      <section class="panel" id="workout-panel" hidden>
+        <h2>Plánovaný trénink</h2>
+        <dl id="workout-details"></dl>
+      </section>
+
+      <section class="panel" id="preview-panel" hidden>
+        <h2>Přepočet podle rychlosti</h2>
+        <p class="hint">Přepočítá se automaticky při změně rychlosti, data nebo startu.</p>
+        <dl id="preview-details"></dl>
+      </section>
+
+      <section class="panel" id="route-panel" hidden>
+        <h2>Vygenerovaná trasa</h2>
+        <dl id="route-details"></dl>
+        <div id="map"></div>
+        <a id="planner-link" class="button primary" target="_blank" rel="noopener">
+          Otevřít v Mapy.com a exportovat GPX
+        </a>
+        <p class="hint">
+          V Mapy.com trasu podle potřeby doupravíš a použiješ jejich vlastní export
+          do GPX, který pak nahraješ do Garmin Edge (přes Garmin Connect / Express,
+          nebo přímo přes SD kartu). Trasa se zároveň uložila do Archivu.
+        </p>
+      </section>
+
+      <section class="panel" id="repeat-panel" hidden>
+        <h2>Okruh na intervaly</h2>
+        <p class="hint">
+          Trénink obsahuje opakované úseky. Tohle je krátký okruh o délce
+          jednoho úseku + zotavení — najdi si podobně dlouhé rovné/bezpečné
+          místo (třeba i tenhle okruh) a udělej tam potřebný počet opakování,
+          místo aby appka cpala všechny úseky do jedné dlouhé trasy.
+        </p>
+        <dl id="repeat-details"></dl>
+        <div id="repeat-map"></div>
+        <a id="repeat-planner-link" class="button primary" target="_blank" rel="noopener">
+          Otevřít okruh na intervaly v Mapy.com
+        </a>
+      </section>
     </section>
 
-    <section class="panel">
-      <h2>2. Kalendář tréninků</h2>
-      <p class="hint">Nejbližší dva týdny z intervals.icu — klikni na trénink, ať se ti vyplní datum níž.</p>
-      <ul id="calendar-list" class="calendar-list"></ul>
-      <a id="calendar-ics-link" class="button" href="/api/workout/calendar.ics">Stáhnout .ics (import do kalendáře)</a>
+    <!-- === Kalendář === -->
+    <section class="view" id="view-calendar" data-view="calendar">
+      <section class="panel">
+        <h2>Kalendář tréninků</h2>
+        <p class="hint">Nejbližší dva týdny z intervals.icu — klikni na trénink, vyplní se datum a přepneš na Novou trasu.</p>
+        <ul id="calendar-list" class="option-list"></ul>
+        <a id="calendar-ics-link" class="button" href="/api/workout/calendar.ics">Stáhnout .ics (import do kalendáře)</a>
+      </section>
     </section>
 
-    <section class="panel">
-      <h2>3. Trénink a výchozí bod</h2>
-      <label>
-        Datum tréninku
-        <input type="date" id="date-input" />
-      </label>
-      <label>
-        Start - adresa
-        <div class="row">
-          <input type="text" id="address-input" placeholder="např. Nádražní 5, Třinec" />
-          <button id="address-search-btn" type="button">Najít</button>
+    <!-- === Archiv === -->
+    <section class="view" id="view-archive" data-view="archive">
+      <section class="panel">
+        <h2>Archiv tras</h2>
+        <p class="hint">Dřív vygenerované trasy — klikni na jednu, ať ji znovu otevřeš (bez nového generování).</p>
+        <ul id="archive-list" class="option-list"></ul>
+      </section>
+
+      <section class="panel" id="archive-detail-panel" hidden>
+        <h2 id="archive-detail-title">Trasa</h2>
+        <dl id="archive-detail-details"></dl>
+        <div id="archive-map"></div>
+        <a id="archive-planner-link" class="button primary" target="_blank" rel="noopener">Otevřít v Mapy.com</a>
+
+        <div id="archive-repeat-block" hidden>
+          <h3>Okruh na intervaly</h3>
+          <dl id="archive-repeat-details"></dl>
+          <div id="archive-repeat-map"></div>
+          <a id="archive-repeat-planner-link" class="button primary" target="_blank" rel="noopener">Otevřít okruh v Mapy.com</a>
         </div>
-      </label>
-      <ul id="address-results" class="calendar-list" hidden></ul>
-      <label>
-        Start (lat, lon)
-        <div class="row">
-          <input type="number" step="0.000001" id="lat-input" placeholder="50.075500" />
-          <input type="number" step="0.000001" id="lon-input" placeholder="14.437800" />
-          <button id="locate-btn" type="button">Použít moji polohu</button>
-        </div>
-        <p class="hint">Vyplní se automaticky po nalezení adresy, nebo je zadej ručně.</p>
-      </label>
-      <fieldset id="surface-field">
-        <legend>Povrch (jen pro kolo)</legend>
-        <label class="inline"><input type="radio" name="surface" value="road" checked /> Silnice (galusky)</label>
-        <label class="inline"><input type="radio" name="surface" value="gravel" /> Gravel (nezpevněné ok)</label>
-      </fieldset>
-      <label>
-        Průměrná rychlost (km/h)
-        <input type="number" step="0.1" min="1" id="speed-input" placeholder="doplní se automaticky" />
-        <span class="hint" id="speed-source-hint"></span>
-      </label>
-      <button id="generate-btn" type="button" class="primary">Vygenerovat trasu</button>
-      <p id="status-message"></p>
+      </section>
     </section>
 
-    <section class="panel" id="workout-panel" hidden>
-      <h2>Plánovaný trénink</h2>
-      <dl id="workout-details"></dl>
-    </section>
-
-    <section class="panel" id="preview-panel" hidden>
-      <h2>Přepočet podle rychlosti</h2>
-      <p class="hint">Přepočítá se automaticky při změně rychlosti, data nebo startu.</p>
-      <dl id="preview-details"></dl>
-    </section>
-
-    <section class="panel" id="route-panel" hidden>
-      <h2>4. Vygenerovaná trasa</h2>
-      <dl id="route-details"></dl>
-      <div id="map"></div>
-      <a id="planner-link" class="button primary" target="_blank" rel="noopener">
-        Otevřít v Mapy.com a exportovat GPX
-      </a>
-      <p class="hint">
-        V Mapy.com trasu podle potřeby doupravíš a použiješ jejich vlastní export
-        do GPX, který pak nahraješ do Garmin Edge (přes Garmin Connect / Express,
-        nebo přímo přes SD kartu).
-      </p>
-    </section>
-
-    <section class="panel" id="repeat-panel" hidden>
-      <h2>5. Okruh na intervaly</h2>
-      <p class="hint">
-        Trénink obsahuje opakované úseky. Tohle je krátký okruh o délce
-        jednoho úseku + zotavení — najdi si podobně dlouhé rovné/bezpečné
-        místo (třeba i tenhle okruh) a udělej tam potřebný počet opakování,
-        místo aby appka cpala všechny úseky do jedné dlouhé trasy.
-      </p>
-      <dl id="repeat-details"></dl>
-      <div id="repeat-map"></div>
-      <a id="repeat-planner-link" class="button primary" target="_blank" rel="noopener">
-        Otevřít okruh na intervaly v Mapy.com
-      </a>
+    <!-- === Nastavení === -->
+    <section class="view" id="view-settings" data-view="settings">
+      <section class="panel">
+        <h2>Strava</h2>
+        <p id="strava-status">Zjišťuji stav připojení…</p>
+        <a id="strava-connect" href="/auth/strava/login" class="button">Připojit Strava</a>
+      </section>
     </section>
   </main>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="vendor/leaflet/leaflet.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

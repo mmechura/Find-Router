@@ -23,6 +23,17 @@ const speedInput = document.getElementById('speed-input');
 const speedSourceHint = document.getElementById('speed-source-hint');
 const previewPanel = document.getElementById('preview-panel');
 const previewDetails = document.getElementById('preview-details');
+const menuBtn = document.getElementById('menu-btn');
+const sideNav = document.getElementById('side-nav');
+const navBackdrop = document.getElementById('nav-backdrop');
+const archiveList = document.getElementById('archive-list');
+const archiveDetailPanel = document.getElementById('archive-detail-panel');
+const archiveDetailTitle = document.getElementById('archive-detail-title');
+const archiveDetailDetails = document.getElementById('archive-detail-details');
+const archivePlannerLink = document.getElementById('archive-planner-link');
+const archiveRepeatBlock = document.getElementById('archive-repeat-block');
+const archiveRepeatDetails = document.getElementById('archive-repeat-details');
+const archiveRepeatPlannerLink = document.getElementById('archive-repeat-planner-link');
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 
@@ -241,21 +252,13 @@ document.querySelectorAll('input[name="surface"]').forEach((el) => el.addEventLi
 
 function renderWorkout(workout) {
   workoutPanel.hidden = false;
-  workoutDetails.innerHTML = '';
-  const rows = [
+  renderDetails(workoutDetails, [
     ['Název', workout.name],
     ['Typ', workout.type],
     ['Vzdálenost', workout.distanceM ? `${(workout.distanceM / 1000).toFixed(1)} km` : '—'],
     ['Délka', workout.movingTimeS ? `${Math.round(workout.movingTimeS / 60)} min` : '—'],
     ['Popis', workout.description || '—'],
-  ];
-  for (const [label, value] of rows) {
-    const dt = document.createElement('dt');
-    dt.textContent = label;
-    const dd = document.createElement('dd');
-    dd.textContent = value;
-    workoutDetails.append(dt, dd);
-  }
+  ]);
 }
 
 function renderRoute(route, plannerUrl) {
@@ -318,6 +321,106 @@ generateBtn.addEventListener('click', async () => {
     generateBtn.disabled = false;
   }
 });
+
+// ---------- Hamburger nav ----------
+
+function openNav() {
+  sideNav.hidden = false;
+  navBackdrop.hidden = false;
+  menuBtn.setAttribute('aria-expanded', 'true');
+}
+
+function closeNav() {
+  sideNav.hidden = true;
+  navBackdrop.hidden = true;
+  menuBtn.setAttribute('aria-expanded', 'false');
+}
+
+function showView(viewName) {
+  document.querySelectorAll('.view').forEach((el) => el.classList.toggle('active', el.dataset.view === viewName));
+  document.querySelectorAll('.nav-link').forEach((el) => el.classList.toggle('active', el.dataset.view === viewName));
+  if (viewName === 'archive') loadArchive();
+}
+
+menuBtn.addEventListener('click', () => (sideNav.hidden ? openNav() : closeNav()));
+navBackdrop.addEventListener('click', closeNav);
+document.querySelectorAll('.nav-link').forEach((link) => {
+  link.addEventListener('click', () => {
+    showView(link.dataset.view);
+    closeNav();
+  });
+});
+
+// ---------- Archiv tras ----------
+
+function formatArchiveRow(entry) {
+  const sportLabel = entry.sport === 'bike' ? 'kolo' : 'běh';
+  return `${entry.workoutDate} - ${entry.workoutName} (${entry.actualDistanceKm.toFixed(1)} km, ${sportLabel})${entry.hasRepeatRoute ? ' <span class="badge">+ intervaly</span>' : ''}`;
+}
+
+async function loadArchive() {
+  archiveList.innerHTML = '<li class="muted">Načítám…</li>';
+  archiveDetailPanel.hidden = true;
+  try {
+    const res = await fetch('/api/routes');
+    const data = await res.json();
+    if (!res.ok) {
+      archiveList.innerHTML = `<li class="muted">${data.error || 'Archiv se nepodařilo načíst.'}</li>`;
+      return;
+    }
+    if (data.routes.length === 0) {
+      archiveList.innerHTML = '<li class="muted">Zatím žádné vygenerované trasy.</li>';
+      return;
+    }
+    archiveList.innerHTML = '';
+    for (const entry of data.routes) {
+      const li = document.createElement('li');
+      li.innerHTML = formatArchiveRow(entry);
+      li.addEventListener('click', () => openArchiveEntry(entry.id));
+      archiveList.append(li);
+    }
+  } catch {
+    archiveList.innerHTML = '<li class="muted">Archiv se nepodařilo načíst.</li>';
+  }
+}
+
+async function openArchiveEntry(id) {
+  try {
+    const res = await fetch(`/api/routes/${id}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setStatus(data.error || 'Trasu se nepodařilo načíst.', true);
+      return;
+    }
+
+    archiveDetailPanel.hidden = false;
+    archiveDetailTitle.textContent = `${data.workoutName} (${data.workoutDate})`;
+    renderDetails(archiveDetailDetails, [
+      ['Vzdálenost', `${data.route.actualDistanceKm.toFixed(2)} km`],
+      ['Odhadovaný čas', `${Math.round(data.route.durationS / 60)} min`],
+      ['Profil trasy', data.route.profile],
+      ['Uloženo', new Date(data.createdAt).toLocaleString('cs-CZ')],
+    ]);
+    drawRoute('archive-map', data.route);
+    archivePlannerLink.href = data.plannerUrl;
+
+    if (data.repeatRoute) {
+      archiveRepeatBlock.hidden = false;
+      renderDetails(archiveRepeatDetails, [
+        ['Délka okruhu', `${data.repeatRoute.actualDistanceKm.toFixed(2)} km`],
+        ['Odhadovaný čas', `${Math.round(data.repeatRoute.durationS / 60)} min`],
+      ]);
+      drawRoute('archive-repeat-map', data.repeatRoute);
+      archiveRepeatPlannerLink.href = data.repeatPlannerUrl;
+    } else {
+      archiveRepeatBlock.hidden = true;
+    }
+
+    archiveDetailPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    setStatus(`Chyba: ${err.message}`, true);
+  }
+}
 
 refreshStravaStatus();
 loadCalendar();

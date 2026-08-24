@@ -85,10 +85,28 @@
   čtení aktivit.
 - `src/integrations/intervals.ts` — čtení plánovaných tréninků
   (kalendářní eventy s `category=WORKOUT`).
+- `src/routing/routeStore.ts` — perzistence archivu vygenerovaných tras přes
+  rozhraní `RouteStore` (`save`/`list`/`get`) se dvěma implementacemi:
+  `FileRouteStore` (lokální `data/routes.json`, pro vývoj a hosting s
+  trvalým diskem) a `UpstashRouteStore` (Redis list přes `@upstash/redis`,
+  pro Vercel). `getRouteStore()` vybere Upstash, pokud jsou nastavené
+  `ROUTES_KV_REST_API_URL`/`ROUTES_KV_REST_API_TOKEN`, jinak spadne na
+  soubor — appka na Vercelu bez KV neselže, jen si archiv nepamatuje mezi
+  studenými starty.
+- `src/routes/archive.ts` — REST endpointy pro archiv (`GET /api/routes` —
+  souhrn posledních 50 tras, `GET /api/routes/:id` — detail včetně
+  geometrie a odkazu do plánovače) nad `routeStore.ts`. `src/routes/route.ts`
+  po každém úspěšném `/generate` uloží výslednou trasu do archivu (chyba
+  uložení appku nezastaví, jen se zaloguje).
 - `src/app.ts` — sestavení Express aplikace (middleware + routery), bez
   `app.listen()`. `src/server.ts` ho spustí jako klasický proces (lokální
   vývoj, Docker); `api/index.ts` ho místo toho exportuje jako Vercel
   serverless funkci (viz `vercel.json`) — stejný Express app běží na obou.
+- `public/index.html`/`app.js`/`style.css` — jednostránková appka rozdělená
+  na 4 "views" (`data-view="home|calendar|archive|settings"`), mezi kterými
+  přepíná hamburger menu v `app.js` (`showView()` přepíná třídu `.active`,
+  žádný router/framework); design používá CSS custom properties v
+  `style.css` s automatickým dark-mode variantou (`prefers-color-scheme`).
 
 ## Jak appka pracuje s intervaly
 
@@ -214,8 +232,9 @@ krok, ale je to samostatný, mnohem větší projekt.
   nemá aktivity daného sportu, použije se konzervativní výchozí tempo
   (běh 10 km/h, kolo 25 km/h) — buď automaticky, nebo si ho přepiš v UI.
 - **Mapy.com JS/dlaždicová API**: náhledová mapa v prohlížeči používá
-  veřejné OpenStreetMap dlaždice (bez API klíče), aby fungovala hned "out
-  of the box" — routing a finální export přesto jdou přes Mapy.com. Pokud
-  chceš branding Mapy.com i v náhledu, stačí vyměnit `L.tileLayer(...)` v
-  `public/app.js` za dlaždicový endpoint Mapy.com dle aktuální
-  [developer.mapy.com](https://developer.mapy.com/) dokumentace.
+  Leaflet (vendorovaný lokálně v `public/vendor/leaflet/`, žádná závislost
+  na CDN) s veřejnými OpenStreetMap dlaždicemi (bez API klíče), aby
+  fungovala hned "out of the box" — routing a finální export přesto jdou
+  přes Mapy.com. Pokud chceš branding Mapy.com i v náhledu, stačí vyměnit
+  `L.tileLayer(...)` v `public/app.js` za dlaždicový endpoint Mapy.com dle
+  aktuální [developer.mapy.com](https://developer.mapy.com/) dokumentace.

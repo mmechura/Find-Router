@@ -63,7 +63,11 @@ npm run dev
 
 Appka poběží na `http://localhost:3000`.
 
-1. Klikni na **Připojit Strava** a projdi OAuth souhlas.
+Appka má hamburger menu (ikonka vlevo nahoře) se 4 sekcemi: **Nová trasa**,
+**Kalendář tréninků**, **Archiv tras** a **Nastavení** (tam je teď přesunuté
+připojení Strava).
+
+1. V **Nastavení** klikni na **Připojit Strava** a projdi OAuth souhlas.
 2. V **Kalendáři tréninků** vidíš nejbližší dva týdny z intervals.icu —
    klikni na trénink a datum se ti vyplní samo (nebo si celý kalendář
    stáhni jako **.ics** a importuj do Google/Apple/Outlook kalendáře).
@@ -82,6 +86,12 @@ Appka poběží na `http://localhost:3000`.
 7. Pokud appka rozpoznala intervaly, přibude sekce **"Okruh na intervaly"**
    s vlastním odkazem do Mapy.com — tenhle kratší okruh je určený k
    opakování na místě, ne k proběhnutí jednou.
+8. Každá vygenerovaná trasa se automaticky uloží do **Archivu tras** — otevři
+   ho z hamburger menu, klikni na trénink a appka znovu zobrazí uloženou
+   trasu (mapu i odkaz do Mapy.com) bez nového generování. Bez nastaveného
+   Vercel KV (viz Nasazení níže) se archiv na serverless hostingu po
+   restartu appky vyprázdní; lokálně/na hostingu s trvalým diskem přežije
+   v `data/routes.json`.
 
 ## Nasazení (aby appka fungovala odkudkoli, ne jen na `localhost`)
 
@@ -114,6 +124,24 @@ v podstatě jednorázová věc:
    funkce běží na read-only souborovém systému, appka tam nemá kam uložit
    token lokálně, takže bez `STRAVA_REFRESH_TOKEN` by se Strava po každém
    "studeném startu" odpojila.
+6. Stejný problém (read-only disk) má i **Archiv tras** — bez trvalého
+   úložiště by se po každém studeném startu vyprázdnil. Appka na to používá
+   Upstash Redis (funguje i jako Vercel KV integrace, zdarma na malé
+   objemy):
+   - Ve Vercel projektu jdi na záložku **Storage** → **Create Database** →
+     **Upstash** → **Redis** (nebo rovnou <https://console.upstash.com>,
+     pokud chceš databázi spravovat mimo Vercel) a databázi připoj k
+     projektu.
+   - Upstash/Vercel vygeneruje REST URL a token — zkopíruj je do proměnných
+     `ROUTES_KV_REST_API_URL` a `ROUTES_KV_REST_API_TOKEN` (schválně appce
+     vlastní jména, ne `KV_REST_API_URL`/`KV_REST_API_TOKEN` ani
+     `UPSTASH_REDIS_REST_URL`/`...TOKEN`, které Vercel/Upstash někdy mezi
+     verzemi integrace přejmenovávají — appka tak nezávisí na tom, jak se
+     zrovna jmenují).
+   - Redeploy. Bez těchto dvou proměnných appka archiv jen tiše ukládá do
+     `data/routes.json`, což na Vercelu znamená "dokud appka neusne
+     studeně" — negeneruje se chyba, jen se archiv nebude spolehlivě
+     uchovávat.
 
 Od téhle chvíle appka na Vercel URL přežije redeploy i výpadky bez nutnosti
 cokoliv znovu propojovat. Na co si dát pozor: appka pro jednu trasu volá
