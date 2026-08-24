@@ -7,13 +7,15 @@ import { StravaClient } from '../integrations/strava.js';
 import { getValidStravaAccessToken } from '../stravaSession.js';
 import { computeReadiness } from '../routing/readiness.js';
 import { buildRouteRequest, estimateDurationS, mapIntervalsTypeToSport } from '../routing/planMatcher.js';
-import { generateLoopRoute } from '../routing/loopRouteGenerator.js';
+import { generateLoopRoute, type LoopRouteResult, type MapyRoutingClient } from '../routing/loopRouteGenerator.js';
 import { generateLoopRouteViaBRouter } from '../routing/brouterLoopGenerator.js';
+import { generatePointToPointRoute } from '../routing/pointToPointRoute.js';
 import { BRouterClient } from '../integrations/brouter.js';
-import { buildExclusionChecker, staticNogoCircles } from '../routing/excludedZones.js';
-import { buildRoadSnapper } from '../routing/roadSnapper.js';
+import { buildExclusionChecker, staticNogoCircles, type ExclusionChecker } from '../routing/excludedZones.js';
+import { buildRoadSnapper, type RoadSnapper } from '../routing/roadSnapper.js';
 import { getRouteStore } from '../routing/routeStore.js';
 import { MapyElevationClient } from '../integrations/elevation.js';
+import { haversineDistanceKm } from '../routing/geo.js';
 import {
   RELAXED_MAX_GRADE_PERCENT,
   STRICT_MAX_GAIN_PER_KM,
@@ -29,6 +31,10 @@ interface GenerateBody {
   date?: string;
   lat?: number;
   lon?: number;
+  /** Bod B - když je zadaný, appka místo hledání okruhu vede trasu přímo
+   *  z (lat, lon) do (endLat, endLon), viz generatePointToPointRoute(). */
+  endLat?: number;
+  endLon?: number;
   surface?: 'road' | 'gravel';
   speedKmh?: number;
   terrain?: 'auto' | 'flat' | 'hilly';
@@ -62,6 +68,46 @@ function useBRouterFor(routeRequest: RoutePlan): boolean {
 
 function brouterProfileFor(preferFlat: boolean | undefined): string {
   return preferFlat ? 'bike-road-flat' : 'bike-road-hilly';
+}
+
+/**
+ * The short loop for repeating interval work (see the call sites below) is
+ * always a plain Mapy.com loop around the start point, regardless of
+ * whether the main route is a loop, a BRouter loop, or point-to-point -
+ * shared here since three call sites previously built the near-identical
+ * request by hand. `exclusionChecker`/`roadSnapper` are optional: the
+ * point-to-point path skips fetching them for this short loop specifically
+ * to avoid two extra Overpass calls on top of its own (Vercel's 10s
+ * function timeout - see README -> Nasazení).
+ */
+async function generateRepeatLoop(
+  routeRequest: RoutePlan,
+  start: RoutePlan['start'],
+  mapy: MapyRoutingClient,
+  elevationClient: MapyElevationClient,
+  exclusionChecker?: ExclusionChecker,
+  roadSnapper?: RoadSnapper,
+): Promise<LoopRouteResult | undefined> {
+  if (!routeRequest.repeatSegmentKm || routeRequest.repeatSegmentKm < 0.15) return undefined;
+  const repeatRoute = await generateLoopRoute(
+    {
+      start,
+      targetDistanceKm: routeRequest.repeatSegmentKm,
+      sport: routeRequest.sport,
+      preferFlat: routeRequest.preferFlat,
+      surface: routeRequest.surface,
+      exclusionChecker,
+      roadSnapper,
+      elevationGate: {
+        client: elevationClient,
+        maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+        maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+      },
+    },
+    mapy,
+  );
+  repeatRoute.durationS = estimateDurationS(repeatRoute.actualDistanceKm, routeRequest.paceKmh);
+  return repeatRoute;
 }
 
 /**
@@ -142,12 +188,13 @@ routeRouter.post('/preview', async (req, res) => {
 });
 
 routeRouter.post('/generate', async (req, res) => {
-  const { date, lat, lon, surface, speedKmh, terrain } = req.body as GenerateBody;
+  const { date, lat, lon, endLat, endLon, surface, speedKmh, terrain } = req.body as GenerateBody;
 
   if (typeof lat !== 'number' || typeof lon !== 'number') {
     res.status(400).json({ error: 'Chybí výchozí bod (lat, lon).' });
     return;
   }
+  const end = typeof endLat === 'number' && typeof endLon === 'number' ? { lat: endLat, lon: endLon } : undefined;
   if (!config.mapyApiKey) {
     res.status(500).json({ error: 'MAPY_API_KEY není nastaven v .env' });
     return;
@@ -173,10 +220,40 @@ routeRouter.post('/generate', async (req, res) => {
     const elevationClient = new MapyElevationClient(config.mapyApiKey);
     const radiusKm = routeRequest.targetDistanceKm / (2 * Math.PI);
 
-    let route: Awaited<ReturnType<typeof generateLoopRoute>>;
-    let repeatRoute: Awaited<ReturnType<typeof generateLoopRoute>> | undefined;
+    let route: LoopRouteResult & { warning?: string };
+    let repeatRoute: LoopRouteResult | undefined;
 
-    if (useBRouterFor(routeRequest)) {
+    if (end) {
+      // Trasa z bodu A do bodu B: přesně jedna trasa k nalezení, žádné
+      // hledání okruhu dané délky - viz pointToPointRoute.ts. Zakázané
+      // oblasti se hledají kolem středu úsečky start-end (ne kolem startu),
+      // protože trasa může vést kamkoli mezi oběma body.
+      const midpoint = { lat: (start.lat + end.lat) / 2, lon: (start.lon + end.lon) / 2 };
+      const halfDistanceKm = haversineDistanceKm(start, end) / 2;
+      const exclusionChecker = await buildExclusionChecker(midpoint, halfDistanceKm, routeRequest.sport);
+
+      route = await generatePointToPointRoute(
+        {
+          start,
+          end,
+          sport: routeRequest.sport,
+          preferFlat: routeRequest.preferFlat,
+          surface: routeRequest.surface,
+          exclusionChecker,
+          elevationGate: {
+            client: elevationClient,
+            maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+            maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+          },
+        },
+        mapy,
+      );
+      route.durationS = estimateDurationS(route.actualDistanceKm, routeRequest.paceKmh);
+
+      // Opakovací okruh na intervaly zůstává okruhem kolem startu (bodu A) -
+      // nezávisí na tom, jestli hlavní trasa vede do bodu B.
+      repeatRoute = await generateRepeatLoop(routeRequest, start, mapy, elevationClient);
+    } else if (useBRouterFor(routeRequest)) {
       // Variant 2, Milestone 1: BRouter's own round-trip search already
       // enforces distance/elevation/no-go constraints at search time (via
       // the chosen .brf profile and `nogos`), so none of the live Overpass
@@ -260,26 +337,7 @@ routeRouter.post('/generate', async (req, res) => {
       // It's one consistent-effort loop, so a single grade ceiling (no
       // windows) is enough - unlike the main route it has no separate easy
       // bookends.
-      if (routeRequest.repeatSegmentKm && routeRequest.repeatSegmentKm >= 0.15) {
-        repeatRoute = await generateLoopRoute(
-          {
-            start,
-            targetDistanceKm: routeRequest.repeatSegmentKm,
-            sport: routeRequest.sport,
-            preferFlat: routeRequest.preferFlat,
-            surface: routeRequest.surface,
-            exclusionChecker,
-            roadSnapper: roadSnapper ?? undefined,
-            elevationGate: {
-              client: elevationClient,
-              maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
-              maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
-            },
-          },
-          mapy,
-        );
-        repeatRoute.durationS = estimateDurationS(repeatRoute.actualDistanceKm, routeRequest.paceKmh);
-      }
+      repeatRoute = await generateRepeatLoop(routeRequest, start, mapy, elevationClient, exclusionChecker, roadSnapper ?? undefined);
     }
 
     const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);

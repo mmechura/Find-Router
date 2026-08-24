@@ -20,12 +20,15 @@ authRouter.get('/strava/login', (_req, res) => {
 authRouter.get('/strava/callback', async (req, res) => {
   const code = req.query.code as string | undefined;
   const error = req.query.error as string | undefined;
+  // These go out as text/plain, never HTML: `error` is an attacker-
+  // controlled query param, and res.send() with a bare string defaults to
+  // text/html - reflecting it there would be a straightforward XSS.
   if (error) {
-    res.status(400).send(`Strava autorizace zamítnuta: ${error}`);
+    res.status(400).type('text/plain').send(`Strava autorizace zamítnuta: ${error}`);
     return;
   }
   if (!code || !config.stravaClientId || !config.stravaClientSecret) {
-    res.status(400).send('Chybí autorizační kód nebo Strava API klíče.');
+    res.status(400).type('text/plain').send('Chybí autorizační kód nebo Strava API klíče.');
     return;
   }
   try {
@@ -35,9 +38,13 @@ authRouter.get('/strava/callback', async (req, res) => {
     // refresh token never ends up in the URL/browser history/proxy logs.
     res.send(renderConnectedPage(tokens.refresh_token));
   } catch (err) {
-    res.status(502).send(`Výměna Strava tokenu selhala: ${(err as Error).message}`);
+    res.status(502).type('text/plain').send(`Výměna Strava tokenu selhala: ${(err as Error).message}`);
   }
 });
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
 
 function renderConnectedPage(refreshToken: string): string {
   return `<!doctype html>
@@ -50,7 +57,7 @@ code{background:#eee;padding:0.6rem;display:block;border-radius:6px;word-break:b
 <p>Pokud appku nasazuješ na hosting bez trvalého disku (např. Render free tier),
 ulož si tenhle <strong>refresh token</strong> jako proměnnou prostředí
 <code>STRAVA_REFRESH_TOKEN</code>, aby přežil restart/redeploy:</p>
-<code>${refreshToken}</code>
+<code>${escapeHtml(refreshToken)}</code>
 <p><a href="/">Pokračovat do appky</a></p>
 </body></html>`;
 }

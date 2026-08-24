@@ -17,8 +17,34 @@ import { heatmapRouter } from './routes/heatmap.js';
 const publicDir = join(process.cwd(), 'public');
 
 const app = express();
+app.disable('x-powered-by');
+
+// Baseline hardening headers. CSP is deliberately tight (this app has no
+// inline scripts/styles and vendors Leaflet locally - see README) with the
+// one exception it actually needs: OpenStreetMap tile images for the
+// in-browser map preview.
+app.use((_req, res, next) => {
+  res.set({
+    'X-Content-Type-Options': 'nosniff',
+    'X-Frame-Options': 'DENY',
+    'Referrer-Policy': 'no-referrer',
+    'Cross-Origin-Opener-Policy': 'same-origin',
+    'Content-Security-Policy': [
+      "default-src 'self'",
+      "script-src 'self'",
+      "style-src 'self'",
+      "img-src 'self' data: https://tile.openstreetmap.org",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; '),
+  });
+  next();
+});
+
 app.use(appPasswordGate);
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static(publicDir));
 
 app.use('/auth', authRouter);

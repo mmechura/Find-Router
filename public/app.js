@@ -19,6 +19,12 @@ const calendarIcsLink = document.getElementById('calendar-ics-link');
 const addressInput = document.getElementById('address-input');
 const addressSearchBtn = document.getElementById('address-search-btn');
 const addressResults = document.getElementById('address-results');
+const endPointField = document.getElementById('end-point-field');
+const endAddressInput = document.getElementById('end-address-input');
+const endAddressSearchBtn = document.getElementById('end-address-search-btn');
+const endAddressResults = document.getElementById('end-address-results');
+const endLatInput = document.getElementById('end-lat-input');
+const endLonInput = document.getElementById('end-lon-input');
 const speedInput = document.getElementById('speed-input');
 const speedSourceHint = document.getElementById('speed-source-hint');
 const previewPanel = document.getElementById('preview-panel');
@@ -68,7 +74,7 @@ function drawRoute(elementId, route) {
 }
 
 function renderDetails(container, rows) {
-  container.innerHTML = '';
+  container.replaceChildren();
   for (const [label, value] of rows) {
     const dt = document.createElement('dt');
     dt.textContent = label;
@@ -76,6 +82,16 @@ function renderDetails(container, rows) {
     dd.textContent = value;
     container.append(dt, dd);
   }
+}
+
+// Every dynamic string rendered into a list below (server error messages,
+// workout/activity names from intervals.icu/Strava) goes through
+// textContent, never innerHTML - none of it is trusted markup.
+function renderMessage(container, text) {
+  const li = document.createElement('li');
+  li.className = 'muted';
+  li.textContent = text;
+  container.replaceChildren(li);
 }
 
 function setStatus(message, isError = false) {
@@ -103,66 +119,93 @@ async function loadCalendar() {
   try {
     const res = await fetch('/api/workout/calendar');
     const data = await res.json();
-    if (!res.ok) {
-      calendarList.innerHTML = `<li class="muted">${data.error || 'Kalendář se nepodařilo načíst.'}</li>`;
-      return;
-    }
+    if (!res.ok) return renderMessage(calendarList, data.error || 'Kalendář se nepodařilo načíst.');
     calendarIcsLink.href = `/api/workout/calendar.ics?from=${data.from}&to=${data.to}`;
     if (data.workouts.length === 0) {
-      calendarList.innerHTML = '<li class="muted">Žádné naplánované tréninky v nejbližších dvou týdnech.</li>';
-      return;
+      return renderMessage(calendarList, 'Žádné naplánované tréninky v nejbližších dvou týdnech.');
     }
-    calendarList.innerHTML = '';
-    for (const workout of data.workouts) {
-      const li = document.createElement('li');
-      const distance = workout.distanceM ? `${(workout.distanceM / 1000).toFixed(1)} km` : '';
-      const duration = workout.movingTimeS ? `${Math.round(workout.movingTimeS / 60)} min` : '';
-      li.textContent = `${workout.date} - ${workout.name}${distance || duration ? ` (${[distance, duration].filter(Boolean).join(', ')})` : ''}`;
-      li.addEventListener('click', () => {
-        dateInput.value = workout.date;
-        setStatus(`Datum nastaveno na ${workout.date}.`);
-        schedulePreview();
-      });
-      calendarList.append(li);
-    }
+    calendarList.replaceChildren(
+      ...data.workouts.map((workout) => {
+        const li = document.createElement('li');
+        const distance = workout.distanceM ? `${(workout.distanceM / 1000).toFixed(1)} km` : '';
+        const duration = workout.movingTimeS ? `${Math.round(workout.movingTimeS / 60)} min` : '';
+        li.textContent = `${workout.date} - ${workout.name}${distance || duration ? ` (${[distance, duration].filter(Boolean).join(', ')})` : ''}`;
+        li.addEventListener('click', () => {
+          dateInput.value = workout.date;
+          setStatus(`Datum nastaveno na ${workout.date}.`);
+          schedulePreview();
+        });
+        return li;
+      }),
+    );
   } catch {
-    calendarList.innerHTML = '<li class="muted">Kalendář se nepodařilo načíst.</li>';
+    renderMessage(calendarList, 'Kalendář se nepodařilo načíst.');
   }
 }
 
-async function searchAddress() {
-  const query = addressInput.value.trim();
-  if (!query) return;
-  addressResults.hidden = false;
-  addressResults.innerHTML = '<li class="muted">Hledám…</li>';
-  try {
-    const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
-    const data = await res.json();
-    if (!res.ok) {
-      addressResults.innerHTML = `<li class="muted">${data.error || 'Hledání selhalo.'}</li>`;
-      return;
+/** Wires an address input + "Najít" button to /api/geocode, filling latEl/
+ *  lonEl on pick. Shared by the start-point and end-point (bod B) fields. */
+function wireAddressSearch(input, searchBtn, resultsList, latEl, lonEl, pointLabel) {
+  async function search() {
+    const query = input.value.trim();
+    if (!query) return;
+    resultsList.hidden = false;
+    renderMessage(resultsList, 'Hledám…');
+    try {
+      const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+      const data = await res.json();
+      if (!res.ok) return renderMessage(resultsList, data.error || 'Hledání selhalo.');
+      if (data.results.length === 0) return renderMessage(resultsList, 'Nic nenalezeno.');
+      resultsList.replaceChildren(
+        ...data.results.map((result) => {
+          const li = document.createElement('li');
+          li.textContent = result.label;
+          li.addEventListener('click', () => {
+            latEl.value = result.lat.toFixed(6);
+            lonEl.value = result.lon.toFixed(6);
+            resultsList.hidden = true;
+            setStatus(`${pointLabel} nastaven na "${result.label}".`);
+            schedulePreview();
+          });
+          return li;
+        }),
+      );
+    } catch (err) {
+      renderMessage(resultsList, `Chyba: ${err.message}`);
     }
-    if (data.results.length === 0) {
-      addressResults.innerHTML = '<li class="muted">Nic nenalezeno.</li>';
-      return;
-    }
-    addressResults.innerHTML = '';
-    for (const result of data.results) {
-      const li = document.createElement('li');
-      li.textContent = result.label;
-      li.addEventListener('click', () => {
-        latInput.value = result.lat.toFixed(6);
-        lonInput.value = result.lon.toFixed(6);
-        addressResults.hidden = true;
-        setStatus(`Start nastaven na "${result.label}".`);
-        schedulePreview();
-      });
-      addressResults.append(li);
-    }
-  } catch (err) {
-    addressResults.innerHTML = `<li class="muted">Chyba: ${err.message}</li>`;
   }
+  searchBtn.addEventListener('click', search);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      search();
+    }
+  });
 }
+
+wireAddressSearch(addressInput, addressSearchBtn, addressResults, latInput, lonInput, 'Start');
+wireAddressSearch(endAddressInput, endAddressSearchBtn, endAddressResults, endLatInput, endLonInput, 'Cíl');
+endLatInput.addEventListener('input', schedulePreview);
+endLonInput.addEventListener('input', schedulePreview);
+
+function isPointToPointMode() {
+  return document.querySelector('input[name="route-mode"]:checked')?.value === 'pointToPoint';
+}
+
+function getEndPoint() {
+  if (!isPointToPointMode()) return {};
+  const endLat = parseFloat(endLatInput.value);
+  const endLon = parseFloat(endLonInput.value);
+  if (Number.isNaN(endLat) || Number.isNaN(endLon)) return {};
+  return { endLat, endLon };
+}
+
+document.querySelectorAll('input[name="route-mode"]').forEach((el) =>
+  el.addEventListener('change', () => {
+    endPointField.hidden = !isPointToPointMode();
+    schedulePreview();
+  }),
+);
 
 async function prefillDefaultAddress() {
   const query = addressInput.value.trim();
@@ -179,14 +222,6 @@ async function prefillDefaultAddress() {
     // Tichý no-op — výchozí adresu si uživatel může doplnit/opravit ručně.
   }
 }
-
-addressSearchBtn.addEventListener('click', searchAddress);
-addressInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    searchAddress();
-  }
-});
 
 locateBtn.addEventListener('click', () => {
   if (!navigator.geolocation) {
@@ -235,7 +270,7 @@ async function loadPreview() {
     const res = await fetch('/api/route/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, terrain, speedKmh }),
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, terrain, speedKmh, ...getEndPoint() }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -285,12 +320,14 @@ function renderWorkout(workout) {
 
 function renderRoute(route, plannerUrl) {
   routePanel.hidden = false;
-  renderDetails(routeDetails, [
+  const rows = [
     ['Vygenerovaná vzdálenost', `${route.actualDistanceKm.toFixed(2)} km`],
     ['Odhadovaný čas', `${Math.round(route.durationS / 60)} min`],
     ['Profil trasy', route.profile],
     ['Iterací do shody', String(route.iterations)],
-  ]);
+  ];
+  if (route.warning) rows.push(['Upozornění', route.warning]);
+  renderDetails(routeDetails, rows);
   drawRoute('map', route);
   plannerLink.href = plannerUrl;
 }
@@ -329,7 +366,7 @@ generateBtn.addEventListener('click', async () => {
     const res = await fetch('/api/route/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, terrain, speedKmh }),
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, terrain, speedKmh, ...getEndPoint() }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -429,34 +466,31 @@ heatmapLoadBtn.addEventListener('click', async () => {
 
 // ---------- Archiv tras ----------
 
-function formatArchiveRow(entry) {
+function renderArchiveRow(entry) {
+  const li = document.createElement('li');
   const sportLabel = entry.sport === 'bike' ? 'kolo' : 'běh';
-  return `${entry.workoutDate} - ${entry.workoutName} (${entry.actualDistanceKm.toFixed(1)} km, ${sportLabel})${entry.hasRepeatRoute ? ' <span class="badge">+ intervaly</span>' : ''}`;
+  li.append(`${entry.workoutDate} - ${entry.workoutName} (${entry.actualDistanceKm.toFixed(1)} km, ${sportLabel})`);
+  if (entry.hasRepeatRoute) {
+    const badge = document.createElement('span');
+    badge.className = 'badge';
+    badge.textContent = ' + intervaly';
+    li.append(badge);
+  }
+  li.addEventListener('click', () => openArchiveEntry(entry.id));
+  return li;
 }
 
 async function loadArchive() {
-  archiveList.innerHTML = '<li class="muted">Načítám…</li>';
+  renderMessage(archiveList, 'Načítám…');
   archiveDetailPanel.hidden = true;
   try {
     const res = await fetch('/api/routes');
     const data = await res.json();
-    if (!res.ok) {
-      archiveList.innerHTML = `<li class="muted">${data.error || 'Archiv se nepodařilo načíst.'}</li>`;
-      return;
-    }
-    if (data.routes.length === 0) {
-      archiveList.innerHTML = '<li class="muted">Zatím žádné vygenerované trasy.</li>';
-      return;
-    }
-    archiveList.innerHTML = '';
-    for (const entry of data.routes) {
-      const li = document.createElement('li');
-      li.innerHTML = formatArchiveRow(entry);
-      li.addEventListener('click', () => openArchiveEntry(entry.id));
-      archiveList.append(li);
-    }
+    if (!res.ok) return renderMessage(archiveList, data.error || 'Archiv se nepodařilo načíst.');
+    if (data.routes.length === 0) return renderMessage(archiveList, 'Zatím žádné vygenerované trasy.');
+    archiveList.replaceChildren(...data.routes.map(renderArchiveRow));
   } catch {
-    archiveList.innerHTML = '<li class="muted">Archiv se nepodařilo načíst.</li>';
+    renderMessage(archiveList, 'Archiv se nepodařilo načíst.');
   }
 }
 

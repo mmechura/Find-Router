@@ -54,6 +54,28 @@
           </div>
           <span class="hint">Vyplní se automaticky po nalezení adresy, nebo je zadej ručně.</span>
         </label>
+        <fieldset id="mode-field">
+          <legend>Typ trasy</legend>
+          <label class="inline"><input type="radio" name="route-mode" value="loop" checked /> Okruh (start = cíl)</label>
+          <label class="inline"><input type="radio" name="route-mode" value="pointToPoint" /> Z bodu A do bodu B</label>
+        </fieldset>
+        <div id="end-point-field" hidden>
+          <label>
+            Cíl (bod B) - adresa
+            <div class="row">
+              <input type="text" id="end-address-input" placeholder="např. Jablunkov" />
+              <button id="end-address-search-btn" type="button">Najít</button>
+            </div>
+          </label>
+          <ul id="end-address-results" class="option-list" hidden></ul>
+          <label>
+            Cíl (lat, lon)
+            <div class="row">
+              <input type="number" step="0.000001" id="end-lat-input" placeholder="49.575200" />
+              <input type="number" step="0.000001" id="end-lon-input" placeholder="18.755600" />
+            </div>
+          </label>
+        </div>
         <fieldset id="surface-field">
           <legend>Povrch (jen pro kolo)</legend>
           <label class="inline"><input type="radio" name="surface" value="road" checked /> Silnice (galusky)</label>
@@ -74,8 +96,8 @@
         <p id="status-message"></p>
       </section>
 
-      <section class="panel" id="heatmap-panel">
-        <h2>Moje trasy (Strava)</h2>
+      <details class="panel" id="heatmap-panel">
+        <summary>Moje trasy (Strava)</summary>
         <p class="hint">
           Není to oficiální Strava heatmapa (tu appce API nedovolí stáhnout) —
           appka místo toho vezme trasy tvých posledních aktivit ze Strava a
@@ -84,7 +106,7 @@
         <button id="heatmap-load-btn" type="button">Načíst moje trasy</button>
         <div id="heatmap-map" hidden></div>
         <p id="heatmap-status" class="hint"></p>
-      </section>
+      </details>
 
       <section class="panel" id="workout-panel" hidden>
         <h2>Plánovaný trénink</h2>
