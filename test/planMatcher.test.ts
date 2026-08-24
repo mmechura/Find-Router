@@ -116,12 +116,32 @@ describe('buildRouteRequest', () => {
 
   it('passes surface through for bike workouts', () => {
     const workout: PlannedWorkout = { id: '9', date: '2026-08-24', name: 'Endurance ride', type: 'Ride', distanceM: 40000 };
-    expect(buildRouteRequest(workout, start, undefined, 'gravel').surface).toBe('gravel');
-    expect(buildRouteRequest(workout, start, undefined, 'road').surface).toBe('road');
+    expect(buildRouteRequest(workout, start, undefined, { surface: 'gravel' }).surface).toBe('gravel');
+    expect(buildRouteRequest(workout, start, undefined, { surface: 'road' }).surface).toBe('road');
   });
 
   it('ignores surface for run workouts (not a bike-only concept)', () => {
     const workout: PlannedWorkout = { id: '10', date: '2026-08-24', name: 'Easy run', type: 'Run', distanceM: 8000 };
-    expect(buildRouteRequest(workout, start, undefined, 'gravel').surface).toBeUndefined();
+    expect(buildRouteRequest(workout, start, undefined, { surface: 'gravel' }).surface).toBeUndefined();
+  });
+
+  it('uses a speed override for duration-based distance estimates instead of Strava/default pace', () => {
+    const workout: PlannedWorkout = { id: '11', date: '2026-08-24', name: 'Easy run', type: 'Run', movingTimeS: 3600 };
+    const req = buildRouteRequest(workout, start, { acuteToChronicRatio: 1, fatigueLevel: 'moderate', recentAvgSpeedKmh: 12 }, { speedOverrideKmh: 8 });
+    expect(req.targetDistanceKm).toBeCloseTo(8, 5);
+    expect(req.paceKmh).toBe(8);
+  });
+
+  it('exposes warmup/cooldown distance for the strict grade windows', () => {
+    const workout: PlannedWorkout = {
+      id: '12',
+      date: '2026-08-24',
+      name: 'Intervaly',
+      type: 'Run',
+      description: 'Rozcvička 2km, 6x1km (400m klus), 2km vyklusání',
+    };
+    const req = buildRouteRequest(workout, start);
+    expect(req.warmupKm).toBeCloseTo(2, 5);
+    expect(req.cooldownKm).toBeCloseTo(2, 5);
   });
 });

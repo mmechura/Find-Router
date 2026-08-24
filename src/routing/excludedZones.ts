@@ -1,5 +1,5 @@
-import { destinationPoint, distancePointToSegmentKm, haversineDistanceKm } from './geo.js';
-import { fetchRestrictedWays, type BoundingBox, type RestrictedWay } from '../integrations/overpass.js';
+import { boundsAround, distancePointToSegmentKm, haversineDistanceKm, type BoundingBox } from './geo.js';
+import { fetchRestrictedWays, type RestrictedWay } from '../integrations/overpass.js';
 import type { LatLon, Sport } from '../types.js';
 
 export interface ExcludedZone {
@@ -64,15 +64,6 @@ const STATIC_ZONE_BOUNDS: { name: string; bounds: BoundingBox }[] = [
 ];
 
 export const EXCLUDED_ZONES: ExcludedZone[] = STATIC_ZONE_BOUNDS.map((z) => boxZone(z.name, z.bounds));
-
-function boundsAround(center: LatLon, radiusKm: number): BoundingBox {
-  return {
-    minLat: destinationPoint(center, 180, radiusKm).lat,
-    maxLat: destinationPoint(center, 0, radiusKm).lat,
-    minLon: destinationPoint(center, 270, radiusKm).lon,
-    maxLon: destinationPoint(center, 90, radiusKm).lon,
-  };
-}
 
 function nameForWay(way: RestrictedWay): string {
   const reason =

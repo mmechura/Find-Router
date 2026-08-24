@@ -56,6 +56,11 @@
         <label class="inline"><input type="radio" name="surface" value="road" checked /> Silnice (galusky)</label>
         <label class="inline"><input type="radio" name="surface" value="gravel" /> Gravel (nezpevněné ok)</label>
       </fieldset>
+      <label>
+        Průměrná rychlost (km/h)
+        <input type="number" step="0.1" min="1" id="speed-input" placeholder="doplní se automaticky" />
+        <span class="hint" id="speed-source-hint"></span>
+      </label>
       <button id="generate-btn" type="button" class="primary">Vygenerovat trasu</button>
       <p id="status-message"></p>
     </section>
@@ -65,8 +70,14 @@
       <dl id="workout-details"></dl>
     </section>
 
+    <section class="panel" id="preview-panel" hidden>
+      <h2>Přepočet podle rychlosti</h2>
+      <p class="hint">Přepočítá se automaticky při změně rychlosti, data nebo startu.</p>
+      <dl id="preview-details"></dl>
+    </section>
+
     <section class="panel" id="route-panel" hidden>
-      <h2>3. Vygenerovaná trasa</h2>
+      <h2>4. Vygenerovaná trasa</h2>
       <dl id="route-details"></dl>
       <div id="map"></div>
       <a id="planner-link" class="button primary" target="_blank" rel="noopener">
@@ -80,7 +91,7 @@
     </section>
 
     <section class="panel" id="repeat-panel" hidden>
-      <h2>4. Okruh na intervaly</h2>
+      <h2>5. Okruh na intervaly</h2>
       <p class="hint">
         Trénink obsahuje opakované úseky. Tohle je krátký okruh o délce
         jednoho úseku + zotavení — najdi si podobně dlouhé rovné/bezpečné

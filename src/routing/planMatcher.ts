@@ -3,11 +3,12 @@ import type { LoopRouteRequest } from './loopRouteGenerator.js';
 import {
   parseWorkoutStructure,
   repeatSegmentDistanceKm,
+  stepDistanceKm,
   totalDistanceKm,
   type WorkoutStructure,
 } from './workoutSteps.js';
 
-const DEFAULT_PACE_KMH: Record<Sport, number> = {
+export const DEFAULT_PACE_KMH: Record<Sport, number> = {
   run: 10, // ~6:00 min/km, used only when there's no Strava history to calibrate from
   bike: 25,
 };
@@ -19,6 +20,21 @@ export interface RoutePlan extends LoopRouteRequest {
    *  short, repeatable loop to do the hard reps on (see workoutSteps.ts). */
   repeatSegmentKm?: number;
   structure?: WorkoutStructure;
+  /** The speed actually used for every distance/pace estimate below -
+   *  whichever of override/Strava-average/app-default applied. */
+  paceKmh: number;
+  /** First/last stretch of the main route that should always stay easy
+   *  regardless of how intense the middle of the workout is - see
+   *  loopRouteGenerator.ts's strictGradeWindows. */
+  warmupKm?: number;
+  cooldownKm?: number;
+}
+
+export interface BuildRouteOptions {
+  surface?: 'road' | 'gravel';
+  /** Overrides Strava-derived/default pace for every estimate (target
+   *  distance from duration, warmup/cooldown split, repeat segment size). */
+  speedOverrideKmh?: number;
 }
 
 export function mapIntervalsTypeToSport(type: string): Sport {
@@ -27,13 +43,8 @@ export function mapIntervalsTypeToSport(type: string): Sport {
   return 'run';
 }
 
-function estimateDistanceKm(
-  movingTimeS: number,
-  sport: Sport,
-  readiness: FatigueReadiness | undefined,
-): number {
-  const speedKmh = readiness?.recentAvgSpeedKmh ?? DEFAULT_PACE_KMH[sport];
-  return (movingTimeS / 3600) * speedKmh;
+function estimateDistanceKm(movingTimeS: number, paceKmh: number): number {
+  return (movingTimeS / 3600) * paceKmh;
 }
 
 /**
@@ -51,10 +62,10 @@ export function buildRouteRequest(
   workout: PlannedWorkout,
   start: LatLon,
   readiness?: FatigueReadiness,
-  surface: 'road' | 'gravel' = 'road',
+  options: BuildRouteOptions = {},
 ): RoutePlan {
   const sport = mapIntervalsTypeToSport(workout.type);
-  const paceKmh = readiness?.recentAvgSpeedKmh ?? DEFAULT_PACE_KMH[sport];
+  const paceKmh = options.speedOverrideKmh ?? readiness?.recentAvgSpeedKmh ?? DEFAULT_PACE_KMH[sport];
 
   const structure = parseWorkoutStructure(workout) ?? undefined;
 
@@ -62,7 +73,7 @@ export function buildRouteRequest(
     ? workout.distanceM / 1000
     : structure
       ? totalDistanceKm(structure.steps, paceKmh)
-      : estimateDistanceKm(workout.movingTimeS ?? 3600, sport, readiness);
+      : estimateDistanceKm(workout.movingTimeS ?? 3600, paceKmh);
 
   const preferFlat =
     readiness?.fatigueLevel === 'high' ||
@@ -71,13 +82,19 @@ export function buildRouteRequest(
 
   const repeatSegmentKm = structure ? (repeatSegmentDistanceKm(structure.steps, paceKmh) ?? undefined) : undefined;
 
+  const warmupStep = structure?.steps.find((s) => s.kind === 'warmup');
+  const cooldownStep = [...(structure?.steps ?? [])].reverse().find((s) => s.kind === 'cooldown');
+
   return {
     start,
     targetDistanceKm,
     sport,
     preferFlat,
-    surface: sport === 'bike' ? surface : undefined,
+    surface: sport === 'bike' ? (options.surface ?? 'road') : undefined,
     repeatSegmentKm,
     structure,
+    paceKmh,
+    warmupKm: warmupStep ? stepDistanceKm(warmupStep, paceKmh) : undefined,
+    cooldownKm: cooldownStep ? stepDistanceKm(cooldownStep, paceKmh) : undefined,
   };
 }

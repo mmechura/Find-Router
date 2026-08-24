@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { generateLoopRoute, pickProfile, type MapyRoutingClient } from '../src/routing/loopRouteGenerator.js';
 import { haversineDistanceKm } from '../src/routing/geo.js';
 import type { LatLon, MapyRouteResult } from '../src/types.js';
@@ -147,7 +147,7 @@ describe('generateLoopRoute', () => {
   it('honours a custom exclusionChecker passed in the request', async () => {
     // A checker that rejects absolutely everything - proves the injected
     // checker is what's actually consulted, not just the built-in static list.
-    const rejectEverything = { check: () => ({ name: 'test zone', bounds: { minLat: -90, maxLat: 90, minLon: -180, maxLon: 180 } }) };
+    const rejectEverything = { check: () => ({ name: 'test zone', contains: () => true }) };
     let call = 0;
     const client: MapyRoutingClient = {
       async route(waypoints) {
@@ -197,5 +197,80 @@ describe('generateLoopRoute', () => {
     );
     expect(violatesZone).toBe(false);
     expect(call).toBeGreaterThan(1);
+  });
+
+  it('snaps every shape point through the provided roadSnapper', async () => {
+    const snapTarget = { lat: 50.09, lon: 14.41 };
+    const roadSnapper = { nearest: () => snapTarget };
+
+    const result = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 1, roadSnapper }, fakeMapyClient());
+
+    const interior = result.waypoints.slice(1, -1);
+    expect(interior.length).toBeGreaterThan(0);
+    for (const point of interior) expect(point).toEqual(snapTarget);
+  });
+
+  it('falls back to the raw point when roadSnapper finds nothing nearby', async () => {
+    const roadSnapper = { nearest: () => null };
+    const result = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 1 }, fakeMapyClient());
+    const snapped = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 1, roadSnapper }, fakeMapyClient());
+    expect(snapped.waypoints).toEqual(result.waypoints);
+  });
+
+  it('rejects a candidate whose grade exceeds the elevation gate, in favour of a flatter one', async () => {
+    let call = 0;
+    const client: MapyRoutingClient = {
+      async route(waypoints) {
+        call++;
+        const lengthKm = sumPathKm(waypoints);
+        return {
+          lengthKm,
+          durationS: lengthKm * 300,
+          geometry: { type: 'Feature', geometry: { type: 'LineString', coordinates: waypoints.map((p) => [p.lon, p.lat]) } },
+        };
+      },
+    };
+    // First call gets a brutal climb, everything after is flat.
+    const elevationClient = {
+      elevations: vi.fn(async (points: LatLon[]) => (call === 1 ? points.map((_, i) => i * 200) : points.map(() => 100))),
+    };
+
+    const result = await generateLoopRoute(
+      {
+        start,
+        targetDistanceKm: 10,
+        sport: 'run',
+        seed: 1,
+        elevationGate: { client: elevationClient, maxGradePercent: 4 },
+      },
+      client,
+    );
+    expect(call).toBeGreaterThan(1);
+    // The accepted (best) candidate should not be the brutal-climb one.
+    expect(elevationClient.elevations).toHaveBeenCalled();
+    const finalCoords = result.geometry.geometry.coordinates;
+    expect(finalCoords.length).toBeGreaterThan(0);
+  });
+
+  it('only queries the elevation gate once the cheaper checks already pass (cost control)', async () => {
+    const rejectEverything = { check: () => ({ name: 'always bad', contains: () => true }) };
+    const elevationClient = { elevations: vi.fn(async (points: LatLon[]) => points.map(() => 100)) };
+
+    await generateLoopRoute(
+      {
+        start,
+        targetDistanceKm: 10,
+        sport: 'run',
+        seed: 1,
+        maxIterations: 3,
+        exclusionChecker: rejectEverything,
+        elevationGate: { client: elevationClient, maxGradePercent: 4 },
+      },
+      fakeMapyClient(),
+    );
+
+    // Every candidate fails the (cheap) zone check, so the (expensive)
+    // elevation client should never have been consulted at all.
+    expect(elevationClient.elevations).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,9 @@
 import { clamp, destinationPoint, mulberry32 } from './geo.js';
 import { findBacktrackSpurs } from './spurs.js';
 import { staticExclusionChecker, type ExclusionChecker } from './excludedZones.js';
+import { checkRouteGrade, type GradeWindow } from './elevationProfile.js';
+import type { ElevationClient } from '../integrations/elevation.js';
+import type { RoadSnapper } from './roadSnapper.js';
 import type { LatLon, MapyProfile, MapyRouteResult, Sport } from '../types.js';
 
 export interface MapyRoutingClient {
@@ -27,6 +30,20 @@ export interface LoopRouteRequest {
   /** Defaults to a network-free, static-list-only checker (see excludedZones.ts).
    *  route.ts wires in a live OSM-backed one via buildExclusionChecker(). */
   exclusionChecker?: ExclusionChecker;
+  /** Snaps each proposed shape point to the nearest real road/path (see
+   *  roadSnapper.ts) instead of using the raw, possibly-off-road coordinate.
+   *  Omit to fall back to the raw coordinate (e.g. in tests). */
+  roadSnapper?: RoadSnapper;
+  /** Verifies the route's elevation profile via Mapy.com's Elevation API and
+   *  rejects a candidate whose grade exceeds what's acceptable - either
+   *  everywhere (`maxGradePercent`) or within specific stretches
+   *  (`strictWindows`, e.g. the warmup/cooldown bookends). Omit to skip
+   *  elevation checking entirely (no client needed then). */
+  elevationGate?: {
+    client: ElevationClient;
+    maxGradePercent: number;
+    strictWindows?: GradeWindow[];
+  };
 }
 
 export interface LoopRouteResult {
@@ -63,6 +80,7 @@ function buildLoopWaypoints(
   radiusKm: number,
   count: number,
   rng: () => number,
+  roadSnapper: RoadSnapper | undefined,
 ): LatLon[] {
   const points: LatLon[] = [];
   const jitterDeg = 25;
@@ -70,7 +88,11 @@ function buildLoopWaypoints(
     const baseBearing = (360 / (count + 1)) * i;
     const bearing = baseBearing + (rng() * 2 - 1) * jitterDeg;
     const radiusVariance = 0.8 + rng() * 0.4; // 0.8x - 1.2x, keeps the loop from being a perfect circle
-    points.push(destinationPoint(start, bearing, radiusKm * radiusVariance));
+    const idealPoint = destinationPoint(start, bearing, radiusKm * radiusVariance);
+    // Snap to a real road/path point when we have road-network data for the
+    // area - a raw synthetic coordinate is what caused the "drive into a
+    // cul-de-sac and back" spurs in the first place.
+    points.push(roadSnapper?.nearest(idealPoint) ?? idealPoint);
   }
   return points;
 }
@@ -113,18 +135,30 @@ export async function generateLoopRoute(
   let badStreak = 0;
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
-    const shapePoints = buildLoopWaypoints(req.start, radiusKm, pointCount, rng);
+    const shapePoints = buildLoopWaypoints(req.start, radiusKm, pointCount, rng, req.roadSnapper);
     const waypoints = [req.start, ...shapePoints, req.start];
     const result = await mapy.route(waypoints, profile);
 
     const routeCoords: LatLon[] = result.geometry.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
     const { worstSpurKm } = findBacktrackSpurs(routeCoords);
     const zoneViolation = exclusionChecker.check(routeCoords);
-
     const distanceError = Math.abs(result.lengthKm / req.targetDistanceKm - 1);
-    // A no-go zone is disqualifying, not just "worse": weight it far above
-    // anything distance/spur scoring could otherwise offset.
-    const score = (zoneViolation ? 1000 : 0) + worstSpurKm * 10 + distanceError;
+    const cheapChecksGood = !zoneViolation && distanceError <= toleranceRatio && worstSpurKm <= maxAcceptableSpurKm;
+
+    // Elevation is a real Mapy.com API call per candidate - only spend it on
+    // a candidate that would otherwise already be accepted, instead of on
+    // every iteration regardless of whether the cheaper checks even passed.
+    const gradeViolation =
+      cheapChecksGood && req.elevationGate
+        ? await checkRouteGrade(routeCoords, req.elevationGate.client, {
+            maxGradePercent: req.elevationGate.maxGradePercent,
+            strictWindows: req.elevationGate.strictWindows,
+          })
+        : null;
+
+    // No-go zones and grade violations are disqualifying, not just "worse":
+    // weighted far above anything distance/spur scoring could offset.
+    const score = (zoneViolation ? 1000 : 0) + (gradeViolation ? 500 : 0) + worstSpurKm * 10 + distanceError;
 
     if (score < bestScore) {
       bestScore = score;
@@ -139,15 +173,15 @@ export async function generateLoopRoute(
       };
     }
 
-    const isGoodEnough = !zoneViolation && distanceError <= toleranceRatio && worstSpurKm <= maxAcceptableSpurKm;
-    if (isGoodEnough) break;
+    if (cheapChecksGood && !gradeViolation) break;
 
-    // A shape that keeps clipping a dead end or a no-go zone isn't going to
-    // fix itself by nudging the radius - every few failed attempts, try a
-    // simpler shape with fewer forced waypoints instead, since each one is
-    // an extra chance to land somewhere only reachable by backtracking.
+    // A shape that keeps clipping a dead end, a no-go zone, or too steep a
+    // grade isn't going to fix itself by nudging the radius - every few
+    // failed attempts, try a simpler shape with fewer forced waypoints
+    // instead, since each one is an extra chance to land somewhere only
+    // reachable by backtracking or with an unwanted hill in the way.
     badStreak++;
-    if ((zoneViolation || worstSpurKm > maxAcceptableSpurKm) && badStreak >= 3 && pointCount > minPointCount) {
+    if (!cheapChecksGood && badStreak >= 3 && pointCount > minPointCount) {
       pointCount--;
       badStreak = 0;
     }

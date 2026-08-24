@@ -3,7 +3,7 @@ import { MapyClient, buildMapyPlannerUrl } from '../src/integrations/mapy.js';
 
 describe('MapyClient.geocode', () => {
   it('maps geocode items to a flat {label, lat, lon} list', async () => {
-    const fetchImpl = vi.fn(async () => ({
+    const fetchMock = vi.fn(async (_url: string) => ({
       ok: true,
       json: async () => ({
         items: [
@@ -12,7 +12,8 @@ describe('MapyClient.geocode', () => {
         ],
       }),
       text: async () => '',
-    })) as unknown as typeof fetch;
+    }));
+    const fetchImpl = fetchMock as unknown as typeof fetch;
 
     const client = new MapyClient('test-key', fetchImpl);
     const results = await client.geocode('Třinec');
@@ -22,7 +23,7 @@ describe('MapyClient.geocode', () => {
       { label: 'Náměstí, Třinec', lat: 49.677, lon: 18.64 },
     ]);
 
-    const calledUrl = new URL((fetchImpl.mock.calls[0][0] as string));
+    const calledUrl = new URL(fetchMock.mock.calls[0][0] as string);
     expect(calledUrl.searchParams.get('query')).toBe('Třinec');
     expect(calledUrl.searchParams.get('apikey')).toBe('test-key');
   });

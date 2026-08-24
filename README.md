@@ -18,13 +18,20 @@ Osobní nástroj, který ti vygeneruje trasu na dnešní trénink:
    -> Garmin Connect strukturovaným tréninkem samostatně).
 
 U kola si vybereš **silnice / gravel** (mění se tím povolený povrch, ne
-sklon terénu) a appka se aktivně vyhýbá jak **slepým výběžkům** (vjeď a
-hned se vracej zpátky), tak **zakázaným oblastem** — ty ověřuje živě proti
-OpenStreetMap datům (Overpass API), ne jen podle ručně psaného seznamu.
-Podrobnosti a limity obojího jsou v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+sklon terénu) a appka body okruhu staví chytřeji, ne jen náhodně:
+- každý bod se přichytí k **reálné silnici/cestě** (živě přes OSM/Overpass),
+- appka aktivně vyhýbá **slepým výběžkům**, **zakázaným oblastem**
+  (soukromé/oplocené areály — živě přes OSM) i **silnicím jen pro auta**
+  (dálnice, rychlostní silnice, `bicycle=no` — u kola),
+- **sklon trasy se ověřuje** proti Mapy.com Elevation API — rozcvička a
+  vyklusání dostanou vždycky přísný limit na sklon, i když je zbytek
+  tréninku záměrně kopcovitý,
+- **průměrná rychlost** je editovatelné pole (předvyplněné ze Strava
+  historie nebo výchozí hodnotou appky) — mění cílovou vzdálenost i
+  rozdělení rozcvička/vyklusání okamžitě, jak ji měníš.
 
-Architektura a vědomá omezení (přesnost převýšení, rozpoznávání intervalů,
-odhad tempa) jsou popsané v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Podrobnosti, limity a proč to (zatím) není plnohodnotný graf-based
+route-planner jsou v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Proč Mapy.com
 
@@ -63,11 +70,16 @@ Appka poběží na `http://localhost:3000`.
 3. Zadej výchozí bod buď **adresou** (napiš a klikni *Najít*, appka ji přes
    Mapy.com geocoding převede na souřadnice) nebo přímo lat/lon, případně
    tlačítkem *Použít moji polohu*.
-4. Klikni **Vygenerovat trasu** → appka spočítá trasu a nabídne odkaz
+4. Jakmile appka zná datum i start, dopočítá náhled v sekci **"Přepočet
+   podle rychlosti"** — cílovou vzdálenost, rozcvičku/vyklusání, velikost
+   opakovacího okruhu. Pole **"Průměrná rychlost"** je předvyplněné (ze
+   Strava historie nebo výchozí hodnotou appky), ale klidně si ho over-typuj
+   — přepočet se aktualizuje za běhu.
+5. Klikni **Vygenerovat trasu** → appka spočítá trasu a nabídne odkaz
    **Otevřít v Mapy.com a exportovat GPX**.
-5. V Mapy.com trasu zkontroluj/doladíš a exportuješ GPX nativně přes jejich
+6. V Mapy.com trasu zkontroluj/doladíš a exportuješ GPX nativně přes jejich
    plánovač, pak nahraješ do Garmin Edge.
-6. Pokud appka rozpoznala intervaly, přibude sekce **"Okruh na intervaly"**
+7. Pokud appka rozpoznala intervaly, přibude sekce **"Okruh na intervaly"**
    s vlastním odkazem do Mapy.com — tenhle kratší okruh je určený k
    opakování na místě, ne k proběhnutí jednou.
 
@@ -104,12 +116,15 @@ v podstatě jednorázová věc:
    "studeném startu" odpojila.
 
 Od téhle chvíle appka na Vercel URL přežije redeploy i výpadky bez nutnosti
-cokoliv znovu propojovat. Jediné, na co si dát pozor: appka pro jednu trasu
-volá Mapy.com Routing API i vícekrát za sebou (iterativní doladění délky +
-případný druhý okruh na intervaly) — na Hobby plánu s limitem 10 s na
-funkci by to při hodně pomalé odezvě Mapy.com teoreticky mohlo stačit
-narazit na strop; kdyby se to dělo, dej vědět, jde to zrychlit
-paralelizací nebo snížením počtu iterací v `loopRouteGenerator.ts`.
+cokoliv znovu propojovat. Na co si dát pozor: appka pro jednu trasu volá
+Mapy.com Routing API i vícekrát za sebou (iterativní doladění délky +
+kontrola sklonu přes Elevation API + případný druhý okruh na intervaly),
+plus dvakrát Overpass (zakázané zóny a silniční síť pro přichytávání
+bodů) — na Hobby plánu s limitem 10 s na funkci by to při hodně pomalé
+odezvě některého z těchto API teoreticky mohlo stačit narazit na strop;
+kdyby se to dělo, dej vědět, jde to zrychlit (méně iterací, paralelizace,
+menší buffer kolem zón/silnic v `loopRouteGenerator.ts`/`excludedZones.ts`/
+`roadSnapper.ts`).
 
 ### Alternativa: Render / Docker / vlastní hosting
 

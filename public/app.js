@@ -19,6 +19,10 @@ const calendarIcsLink = document.getElementById('calendar-ics-link');
 const addressInput = document.getElementById('address-input');
 const addressSearchBtn = document.getElementById('address-search-btn');
 const addressResults = document.getElementById('address-results');
+const speedInput = document.getElementById('speed-input');
+const speedSourceHint = document.getElementById('speed-source-hint');
+const previewPanel = document.getElementById('preview-panel');
+const previewDetails = document.getElementById('preview-details');
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 
@@ -102,6 +106,7 @@ async function loadCalendar() {
       li.addEventListener('click', () => {
         dateInput.value = workout.date;
         setStatus(`Datum nastaveno na ${workout.date}.`);
+        schedulePreview();
       });
       calendarList.append(li);
     }
@@ -135,6 +140,7 @@ async function searchAddress() {
         lonInput.value = result.lon.toFixed(6);
         addressResults.hidden = true;
         setStatus(`Start nastaven na "${result.label}".`);
+        schedulePreview();
       });
       addressResults.append(li);
     }
@@ -160,10 +166,78 @@ locateBtn.addEventListener('click', () => {
     (pos) => {
       latInput.value = pos.coords.latitude.toFixed(6);
       lonInput.value = pos.coords.longitude.toFixed(6);
+      schedulePreview();
     },
     (err) => setStatus(`Nepodařilo se zjistit polohu: ${err.message}`, true),
   );
 });
+
+let speedTouchedByUser = false;
+let previewDebounceTimer = null;
+
+function renderPreview(request) {
+  previewPanel.hidden = false;
+  const rows = [
+    ['Cílová vzdálenost', `${request.targetDistanceKm.toFixed(2)} km`],
+    ['Použitá rychlost', `${request.paceKmh.toFixed(1)} km/h`],
+  ];
+  if (request.warmupKm) rows.push(['Rozcvička', `${request.warmupKm.toFixed(2)} km`]);
+  if (request.cooldownKm) rows.push(['Vyklusání', `${request.cooldownKm.toFixed(2)} km`]);
+  if (request.repeatSegmentKm) rows.push(['Opakovací úsek', `${request.repeatSegmentKm.toFixed(2)} km`]);
+  rows.push(['Preferovaný terén', request.preferFlat ? 'spíš rovina' : 'kopce v pořádku']);
+  renderDetails(previewDetails, rows);
+}
+
+async function loadPreview() {
+  const lat = parseFloat(latInput.value);
+  const lon = parseFloat(lonInput.value);
+  if (Number.isNaN(lat) || Number.isNaN(lon)) {
+    previewPanel.hidden = true;
+    return;
+  }
+
+  const surface = document.querySelector('input[name="surface"]:checked')?.value || 'road';
+  const speedKmh = speedTouchedByUser && speedInput.value ? parseFloat(speedInput.value) : undefined;
+
+  try {
+    const res = await fetch('/api/route/preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, speedKmh }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      previewPanel.hidden = true;
+      return;
+    }
+    renderWorkout(data.workout);
+    renderPreview(data.request);
+    if (!speedTouchedByUser) {
+      speedInput.value = data.request.paceKmh.toFixed(1);
+      speedSourceHint.textContent = data.readiness?.recentAvgSpeedKmh
+        ? '(odhad z posledních tréninků na Strava)'
+        : '(výchozí hodnota appky)';
+    } else {
+      speedSourceHint.textContent = '(tvoje vlastní hodnota)';
+    }
+  } catch {
+    previewPanel.hidden = true;
+  }
+}
+
+function schedulePreview() {
+  clearTimeout(previewDebounceTimer);
+  previewDebounceTimer = setTimeout(loadPreview, 400);
+}
+
+speedInput.addEventListener('input', () => {
+  speedTouchedByUser = true;
+  schedulePreview();
+});
+dateInput.addEventListener('change', schedulePreview);
+latInput.addEventListener('input', schedulePreview);
+lonInput.addEventListener('input', schedulePreview);
+document.querySelectorAll('input[name="surface"]').forEach((el) => el.addEventListener('change', schedulePreview));
 
 function renderWorkout(workout) {
   workoutPanel.hidden = false;
@@ -223,10 +297,11 @@ generateBtn.addEventListener('click', async () => {
   generateBtn.disabled = true;
   try {
     const surface = document.querySelector('input[name="surface"]:checked')?.value || 'road';
+    const speedKmh = speedInput.value ? parseFloat(speedInput.value) : undefined;
     const res = await fetch('/api/route/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateInput.value, lat, lon, surface }),
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, speedKmh }),
     });
     const data = await res.json();
     if (!res.ok) {

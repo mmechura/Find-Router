@@ -1,18 +1,37 @@
-import type { LatLon } from '../types.js';
+import type { BoundingBox } from '../routing/geo.js';
+import type { LatLon, Sport } from '../types.js';
+
+export type { BoundingBox };
 
 const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
-
-export interface BoundingBox {
-  minLat: number;
-  maxLat: number;
-  minLon: number;
-  maxLon: number;
-}
 
 export interface RestrictedWay {
   id: number;
   tags: Record<string, string>;
   points: LatLon[];
+}
+
+async function runOverpassQuery(query: string, fetchImpl: typeof fetch): Promise<RestrictedWay[]> {
+  const res = await fetchImpl(OVERPASS_ENDPOINT, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ data: query }).toString(),
+  });
+  if (!res.ok) {
+    throw new Error(`Overpass request failed (${res.status}): ${await res.text()}`);
+  }
+
+  const data = (await res.json()) as {
+    elements?: { type: string; id: number; tags?: Record<string, string>; geometry?: { lat: number; lon: number }[] }[];
+  };
+
+  return (data.elements ?? [])
+    .filter((el) => el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length > 0)
+    .map((el) => ({
+      id: el.id,
+      tags: el.tags ?? {},
+      points: el.geometry!.map((g) => ({ lat: g.lat, lon: g.lon })),
+    }));
 }
 
 export interface FetchRestrictedWaysOptions {
@@ -57,24 +76,31 @@ export async function fetchRestrictedWays(
 );
 out geom;`;
 
-  const res = await fetchImpl(OVERPASS_ENDPOINT, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ data: query }).toString(),
-  });
-  if (!res.ok) {
-    throw new Error(`Overpass request failed (${res.status}): ${await res.text()}`);
-  }
+  return runOverpassQuery(query, fetchImpl);
+}
 
-  const data = (await res.json()) as {
-    elements?: { type: string; id: number; tags?: Record<string, string>; geometry?: { lat: number; lon: number }[] }[];
-  };
+const RUN_HIGHWAYS =
+  'residential|living_street|unclassified|tertiary|secondary|primary|service|track|cycleway|footway|path|pedestrian';
+const BIKE_HIGHWAYS = 'residential|living_street|unclassified|tertiary|secondary|primary|service|cycleway|track';
 
-  return (data.elements ?? [])
-    .filter((el) => el.type === 'way' && Array.isArray(el.geometry) && el.geometry.length > 0)
-    .map((el) => ({
-      id: el.id,
-      tags: el.tags ?? {},
-      points: el.geometry!.map((g) => ({ lat: g.lat, lon: g.lon })),
-    }));
+/**
+ * Queries OSM for ordinary roads/paths within `bbox`, appropriate to
+ * `sport` (bikes skip footway/path/pedestrian, which aren't reliably
+ * bike-legal). Used to snap candidate waypoints onto real road geometry
+ * instead of an arbitrary lat/lon - see roadSnapper.ts.
+ */
+export async function fetchRoadWays(
+  bbox: BoundingBox,
+  sport: Sport,
+  fetchImpl: typeof fetch = fetch,
+): Promise<RestrictedWay[]> {
+  const box = `${bbox.minLat},${bbox.minLon},${bbox.maxLat},${bbox.maxLon}`;
+  const highways = sport === 'bike' ? BIKE_HIGHWAYS : RUN_HIGHWAYS;
+  const query = `[out:json][timeout:15];
+(
+  way["highway"~"^(${highways})$"](${box});
+);
+out geom;`;
+
+  return runOverpassQuery(query, fetchImpl);
 }

@@ -57,6 +57,23 @@ export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+export interface BoundingBox {
+  minLat: number;
+  maxLat: number;
+  minLon: number;
+  maxLon: number;
+}
+
+/** A bounding box roughly `radiusKm` in every direction from `center`. */
+export function boundsAround(center: LatLon, radiusKm: number): BoundingBox {
+  return {
+    minLat: destinationPoint(center, 180, radiusKm).lat,
+    maxLat: destinationPoint(center, 0, radiusKm).lat,
+    minLon: destinationPoint(center, 270, radiusKm).lon,
+    maxLon: destinationPoint(center, 90, radiusKm).lon,
+  };
+}
+
 /**
  * Shortest distance from `point` to the segment a-b, in km. Uses a flat
  * (equirectangular) approximation around `a` - accurate enough for the

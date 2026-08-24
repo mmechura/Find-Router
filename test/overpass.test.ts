@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fetchRestrictedWays } from '../src/integrations/overpass.js';
+import { fetchRestrictedWays, fetchRoadWays } from '../src/integrations/overpass.js';
 
 describe('fetchRestrictedWays', () => {
   it('parses way elements with geometry into RestrictedWay records', async () => {
@@ -40,5 +40,22 @@ describe('fetchRestrictedWays', () => {
     await expect(
       fetchRestrictedWays({ minLat: 50, maxLat: 50.2, minLon: 14, maxLon: 14.2 }, fetchImpl),
     ).rejects.toThrow(/429/);
+  });
+});
+
+describe('fetchRoadWays', () => {
+  it('excludes footway/path/pedestrian from the bike query but includes them for run', async () => {
+    let capturedBody = '';
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = String(init?.body ?? '');
+      return { ok: true, json: async () => ({ elements: [] }), text: async () => '' };
+    }) as unknown as typeof fetch;
+
+    const bbox = { minLat: 50, maxLat: 50.2, minLon: 14, maxLon: 14.2 };
+    await fetchRoadWays(bbox, 'run', fetchImpl);
+    expect(decodeURIComponent(capturedBody)).toContain('footway');
+
+    await fetchRoadWays(bbox, 'bike', fetchImpl);
+    expect(decodeURIComponent(capturedBody)).not.toContain('footway');
   });
 });
