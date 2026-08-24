@@ -153,14 +153,16 @@ v podstatě jednorázová věc:
 
 Od téhle chvíle appka na Vercel URL přežije redeploy i výpadky bez nutnosti
 cokoliv znovu propojovat. Na co si dát pozor: appka pro jednu trasu volá
-Mapy.com Routing API i vícekrát za sebou (iterativní doladění délky +
-kontrola sklonu přes Elevation API + případný druhý okruh na intervaly),
-plus dvakrát Overpass (zakázané zóny a silniční síť pro přichytávání
-bodů) — na Hobby plánu s limitem 10 s na funkci by to při hodně pomalé
-odezvě některého z těchto API teoreticky mohlo stačit narazit na strop;
-kdyby se to dělo, dej vědět, jde to zrychlit (méně iterací, paralelizace,
-menší buffer kolem zón/silnic v `loopRouteGenerator.ts`/`excludedZones.ts`/
-`roadSnapper.ts`).
+Mapy.com Routing API vícekrát za sebou — okruh se od základu staví úsek po
+úseku (každý úsek = jedno volání, viz "Proč appka nejezdí tam a zpátky"
+níže), ne jedním dotazem se všemi waypointy, plus kontrola sklonu přes
+Elevation API a případný druhý okruh na intervaly, plus dvakrát Overpass
+(zakázané zóny a silniční síť pro přichytávání bodů) — na Hobby plánu s
+limitem 10 s na funkci by to při hodně pomalé odezvě některého z těchto
+API nebo delší trase (víc úseků) teoreticky mohlo stačit narazit na strop;
+kdyby se to dělo, dej vědět, jde to zrychlit (`maxIterations`/
+`maxLegRetries` dolů v `loopRouteGenerator.ts`, paralelizace, menší buffer
+kolem zón/silnic v `excludedZones.ts`/`roadSnapper.ts`).
 
 ### Alternativa: Render / Docker / vlastní hosting
 

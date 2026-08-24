@@ -1,5 +1,6 @@
 import { clamp, destinationPoint, mulberry32 } from './geo.js';
 import { findBacktrackSpurs } from './spurs.js';
+import { legOverlapRatio } from './legOverlap.js';
 import { staticExclusionChecker, type ExclusionChecker } from './excludedZones.js';
 import { checkRouteElevation, type GradeWindow } from './elevationProfile.js';
 import type { ElevationClient } from '../integrations/elevation.js';
@@ -27,6 +28,19 @@ export interface LoopRouteRequest {
   toleranceRatio?: number;
   /** Round-trip out-and-back length (km) below which a backtrack is tolerated as noise. */
   maxAcceptableSpurKm?: number;
+  /** How close (km) two legs of the loop have to run to count as "the same
+   *  road" - see legOverlap.ts. Default ~30m absorbs GPS/snap noise and
+   *  opposite-side-of-road offsets, same tolerance used elsewhere for this. */
+  legOverlapBufferKm?: number;
+  /** Fraction (0-1) of a leg allowed to retrace an earlier leg before it's
+   *  worth re-picking that leg's endpoint (see maxLegRetries) or, failing
+   *  that, counting against this candidate's score. */
+  maxLegOverlapRatio?: number;
+  /** How many extra attempts to re-pick a single leg's endpoint when it
+   *  retraces an earlier leg, before giving up and keeping the
+   *  least-overlapping attempt. Each extra attempt is one more Mapy.com
+   *  call, so this stays small. */
+  maxLegRetries?: number;
   /** Defaults to a network-free, static-list-only checker (see excludedZones.ts).
    *  route.ts wires in a live OSM-backed one via buildExclusionChecker(). */
   exclusionChecker?: ExclusionChecker;
@@ -58,6 +72,11 @@ export interface LoopRouteResult {
   iterations: number;
   /** Longest detected dead-end out-and-back detour in the final route, for visibility/debugging. */
   worstSpurKm: number;
+  /** Worst fraction (0-1) of any one leg that retraces an earlier leg of the
+   *  same loop - see legOverlap.ts. Only the Mapy.com loop generator
+   *  populates this (each leg is a separate routing call there); other
+   *  engines leave it undefined. */
+  worstLegOverlapRatio?: number;
 }
 
 /**
@@ -78,26 +97,95 @@ function pickShapePointCount(targetDistanceKm: number): number {
   return clamp(Math.round(targetDistanceKm / 3), 3, 8);
 }
 
-function buildLoopWaypoints(
+/** One candidate point for shape-point slot `i` of `count`, at bearing
+ *  `(360/(count+1))*i` plus random jitter - a fresh call redraws the jitter,
+ *  which is how routeLoopSegmented() below re-picks a leg's endpoint on retry. */
+function proposeShapePoint(
   start: LatLon,
-  radiusKm: number,
+  slot: number,
   count: number,
+  radiusKm: number,
   rng: () => number,
   roadSnapper: RoadSnapper | undefined,
-): LatLon[] {
-  const points: LatLon[] = [];
+): LatLon {
   const jitterDeg = 25;
-  for (let i = 1; i <= count; i++) {
-    const baseBearing = (360 / (count + 1)) * i;
-    const bearing = baseBearing + (rng() * 2 - 1) * jitterDeg;
-    const radiusVariance = 0.8 + rng() * 0.4; // 0.8x - 1.2x, keeps the loop from being a perfect circle
-    const idealPoint = destinationPoint(start, bearing, radiusKm * radiusVariance);
-    // Snap to a real road/path point when we have road-network data for the
-    // area - a raw synthetic coordinate is what caused the "drive into a
-    // cul-de-sac and back" spurs in the first place.
-    points.push(roadSnapper?.nearest(idealPoint) ?? idealPoint);
+  const baseBearing = (360 / (count + 1)) * slot;
+  const bearing = baseBearing + (rng() * 2 - 1) * jitterDeg;
+  const radiusVariance = 0.8 + rng() * 0.4; // 0.8x - 1.2x, keeps the loop from being a perfect circle
+  const idealPoint = destinationPoint(start, bearing, radiusKm * radiusVariance);
+  // Snap to a real road/path point when we have road-network data for the
+  // area - a raw synthetic coordinate is what caused the "drive into a
+  // cul-de-sac and back" spurs in the first place.
+  return roadSnapper?.nearest(idealPoint) ?? idealPoint;
+}
+
+interface SegmentedRoute {
+  waypoints: LatLon[];
+  coords: LatLon[];
+  lengthKm: number;
+  durationS: number;
+  worstLegOverlapRatio: number;
+}
+
+/**
+ * Routes the loop leg by leg (start -> p1, p1 -> p2, ..., pN -> start) as
+ * independent point-to-point Mapy.com calls, instead of one call carrying
+ * every waypoint. This is what makes leg-vs-leg overlap checking possible:
+ * with a single multi-waypoint call, there's no way to tell "did the road
+ * back from p3 reuse the same road already ridden between p1 and p2" -
+ * whereas checking each leg's own polyline against the ones already
+ * accepted catches exactly that (see legOverlap.ts), which a same-point
+ * mirror-symmetry check like spurs.ts's `findBacktrackSpurs` cannot: that
+ * only sees an immediate local turnaround, not two far-apart legs sharing a
+ * road. When a leg overlaps too much, only that leg's endpoint is re-picked
+ * and re-routed - the legs already accepted stay as they are.
+ */
+async function routeLoopSegmented(
+  start: LatLon,
+  pointCount: number,
+  radiusKm: number,
+  profile: MapyProfile,
+  mapy: MapyRoutingClient,
+  rng: () => number,
+  roadSnapper: RoadSnapper | undefined,
+  options: { overlapBufferKm: number; maxOverlapRatio: number; maxRetries: number },
+): Promise<SegmentedRoute> {
+  const waypoints: LatLon[] = [start];
+  const legs: LatLon[][] = [];
+  let lengthKm = 0;
+  let durationS = 0;
+  let worstLegOverlapRatio = 0;
+
+  for (let slot = 1; slot <= pointCount + 1; slot++) {
+    const closingLeg = slot === pointCount + 1; // last leg always returns to start - nothing to re-pick
+    const from = waypoints[waypoints.length - 1];
+    const attempts = closingLeg ? 1 : 1 + options.maxRetries;
+
+    let bestAttempt: { point: LatLon; coords: LatLon[]; lengthKm: number; durationS: number; overlapRatio: number } | undefined;
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      const to = closingLeg ? start : proposeShapePoint(start, slot, pointCount, radiusKm, rng, roadSnapper);
+      const result = await mapy.route([from, to], profile);
+      const coords: LatLon[] = result.geometry.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
+      const overlapRatio = legOverlapRatio(coords, legs, options.overlapBufferKm);
+      if (!bestAttempt || overlapRatio < bestAttempt.overlapRatio) {
+        bestAttempt = { point: to, coords, lengthKm: result.lengthKm, durationS: result.durationS, overlapRatio };
+      }
+      if (overlapRatio <= options.maxOverlapRatio) break; // good enough - stop spending retries on this leg
+    }
+
+    waypoints.push(bestAttempt!.point);
+    legs.push(bestAttempt!.coords);
+    lengthKm += bestAttempt!.lengthKm;
+    durationS += bestAttempt!.durationS;
+    worstLegOverlapRatio = Math.max(worstLegOverlapRatio, bestAttempt!.overlapRatio);
   }
-  return points;
+
+  // Concatenate leg polylines into one continuous track without duplicating
+  // the point each pair of consecutive legs shares.
+  const coords: LatLon[] = [waypoints[0]];
+  for (const leg of legs) coords.push(...leg.slice(1));
+
+  return { waypoints, coords, lengthKm, durationS, worstLegOverlapRatio };
 }
 
 /**
@@ -126,6 +214,11 @@ export async function generateLoopRoute(
   // Round-trip length below which a backtrack is treated as noise (e.g. a
   // short driveway) rather than the annoying "in 150m, turn around" spur.
   const maxAcceptableSpurKm = req.maxAcceptableSpurKm ?? 0.12;
+  const legOverlapOptions = {
+    overlapBufferKm: req.legOverlapBufferKm ?? 0.03,
+    maxOverlapRatio: req.maxLegOverlapRatio ?? 0.3,
+    maxRetries: req.maxLegRetries ?? 1,
+  };
   const exclusionChecker = req.exclusionChecker ?? staticExclusionChecker();
 
   // Circumference of a circle = 2*pi*r, so this is the starting guess for a
@@ -138,15 +231,21 @@ export async function generateLoopRoute(
   let badStreak = 0;
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
-    const shapePoints = buildLoopWaypoints(req.start, radiusKm, pointCount, rng, req.roadSnapper);
-    const waypoints = [req.start, ...shapePoints, req.start];
-    const result = await mapy.route(waypoints, profile);
+    const segmented = await routeLoopSegmented(req.start, pointCount, radiusKm, profile, mapy, rng, req.roadSnapper, legOverlapOptions);
+    const { waypoints, coords: routeCoords, lengthKm, durationS, worstLegOverlapRatio } = segmented;
+    const geometry: MapyRouteResult['geometry'] = {
+      type: 'Feature',
+      geometry: { type: 'LineString', coordinates: routeCoords.map((p) => [p.lon, p.lat]) },
+    };
 
-    const routeCoords: LatLon[] = result.geometry.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
     const { worstSpurKm } = findBacktrackSpurs(routeCoords);
     const zoneViolation = exclusionChecker.check(routeCoords);
-    const distanceError = Math.abs(result.lengthKm / req.targetDistanceKm - 1);
-    const cheapChecksGood = !zoneViolation && distanceError <= toleranceRatio && worstSpurKm <= maxAcceptableSpurKm;
+    const distanceError = Math.abs(lengthKm / req.targetDistanceKm - 1);
+    const cheapChecksGood =
+      !zoneViolation &&
+      distanceError <= toleranceRatio &&
+      worstSpurKm <= maxAcceptableSpurKm &&
+      worstLegOverlapRatio <= legOverlapOptions.maxOverlapRatio;
 
     // Elevation is a real Mapy.com API call per candidate - only spend it on
     // a candidate that would otherwise already be accepted, instead of on
@@ -163,25 +262,27 @@ export async function generateLoopRoute(
     const gainViolation = elevationCheck?.gainViolation ?? null;
 
     // No-go zones and elevation violations are disqualifying, not just
-    // "worse": weighted far above anything distance/spur scoring could
-    // offset.
+    // "worse": weighted far above anything distance/spur/overlap scoring
+    // could offset.
     const score =
       (zoneViolation ? 1000 : 0) +
       (gradeViolation ? 500 : 0) +
       (gainViolation ? 500 : 0) +
       worstSpurKm * 10 +
+      worstLegOverlapRatio * 50 +
       distanceError;
 
     if (score < bestScore) {
       bestScore = score;
       best = {
         waypoints,
-        actualDistanceKm: result.lengthKm,
-        durationS: result.durationS,
-        geometry: result.geometry,
+        actualDistanceKm: lengthKm,
+        durationS,
+        geometry,
         profile,
         iterations: iteration,
         worstSpurKm,
+        worstLegOverlapRatio,
       };
     }
 
@@ -198,7 +299,7 @@ export async function generateLoopRoute(
       badStreak = 0;
     }
 
-    const ratio = result.lengthKm / req.targetDistanceKm;
+    const ratio = lengthKm / req.targetDistanceKm;
     // Guard against a degenerate 0-length response before dividing.
     radiusKm = ratio > 0 ? radiusKm / ratio : radiusKm * 1.5;
   }

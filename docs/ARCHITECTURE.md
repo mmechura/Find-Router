@@ -195,6 +195,26 @@ silnici, a appka neměla ponětí o skutečném terénu. Řeší se to takhle:
    cestě (do 300 m — dál už by "přichycení" nedávalo smysl a použije se
    syrová souřadnice). To samo o sobě výrazně omezuje i slepé výběžky,
    protože appka už neklikne špendlík doprostřed pole nebo dvora.
+   - **Okruh appka nestaví jedním dotazem se všemi waypointy, ale úsek po
+     úseku** (start → bod 1, bod 1 → bod 2, ..., poslední bod → start),
+     kde každý úsek je samostatné volání Mapy.com Routing API mezi dvěma
+     body (`routeLoopSegmented()` v `loopRouteGenerator.ts`) - stejný
+     princip jako trasa "z bodu A do bodu B" (`pointToPointRoute.ts`).
+     Důvod: v řídké silniční síti (jedna cesta údolím) by appka jedním
+     společným dotazem snadno dostala trasu, která tam i zpátky jede po
+     stejné silnici - a to jak lokálně (viz `spurs.ts` níže), tak na
+     úrovni celého okruhu, kde by dva vzdálené úseky potichu sdílely
+     stejnou cestu, aniž by to lokální kontrola vůbec zachytila. Appka
+     proto po každém úseku porovná jeho trasu se všemi už přijatými úseky
+     stejného okruhu (`legOverlap.ts`) - pokud se s některým z nich
+     překrývá z víc než 30 % délky, zkusí pro tenhle úsek jiný koncový bod
+     (znovu s jitterem směru/poloměru), místo aby si nechala ujet celý
+     okruh znovu od začátku. Cena: víc volání Mapy.com na jednu trasu (viz
+     README → Nasazení, Vercel).
+   - **`spurs.ts`'s `findBacktrackSpurs()` zůstává jako doplňková, levná
+     kontrola** na spojené trase celého okruhu - chytí i menší "slepou
+     uličku" na konci jednoho úseku (např. bod uvízl v opravdové
+     cul-de-sac), kterou 30% práh na celý úsek ještě nemusí odchytit.
 2. **Sklon trasy se ověřuje proti skutečným datům.** Po vygenerování
    kandidátní trasy appka zavolá Mapy.com Elevation API a spočítá sklon
    po úsecích (`elevationProfile.ts`). Limit je buď jednotný pro celou

@@ -144,6 +144,41 @@ describe('generateLoopRoute', () => {
     expect(call).toBeGreaterThan(1);
   });
 
+  it('re-picks a leg that would retrace an earlier leg of the same loop, instead of keeping the overlap', async () => {
+    // Simulates a sparse road network where the second leg's first attempt
+    // happens to come back down the exact same road the first leg already
+    // used (reversed) - the "ride out and back on one road" pattern a
+    // same-point mirror check (spurs.ts) can't see, since the two
+    // overlapping stretches are in different legs, not adjacent points.
+    // A 10km loop has 3 shape points -> 4 legs, so 4 calls with no retry;
+    // call #2 (the second leg's first attempt) deliberately retraces call
+    // #1, everything else is a distinct, non-overlapping leg.
+    const sharedRoad: LatLon[] = [start, { lat: start.lat + 0.05, lon: start.lon + 0.02 }];
+    const leg = (coords: LatLon[]): Promise<MapyRouteResult> =>
+      Promise.resolve({
+        lengthKm: sumPathKm(coords),
+        durationS: sumPathKm(coords) * 300,
+        geometry: { type: 'Feature', geometry: { type: 'LineString', coordinates: coords.map((p) => [p.lon, p.lat]) } },
+      });
+
+    let callCount = 0;
+    const client: MapyRoutingClient = {
+      async route(): Promise<MapyRouteResult> {
+        callCount++;
+        if (callCount === 1) return leg(sharedRoad);
+        if (callCount === 2) return leg([...sharedRoad].reverse());
+        return leg([
+          { lat: start.lat - 0.05 * callCount, lon: start.lon + 0.06 * callCount },
+          { lat: start.lat - 0.05 * (callCount + 1), lon: start.lon + 0.06 * (callCount + 1) },
+        ]);
+      },
+    };
+
+    const result = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 7, maxIterations: 1 }, client);
+    expect(callCount).toBeGreaterThan(4); // retried the overlapping leg instead of keeping it
+    expect(result.worstLegOverlapRatio ?? 0).toBeLessThan(0.3);
+  });
+
   it('honours a custom exclusionChecker passed in the request', async () => {
     // A checker that rejects absolutely everything - proves the injected
     // checker is what's actually consulted, not just the built-in static list.
@@ -166,8 +201,12 @@ describe('generateLoopRoute', () => {
       client,
     );
     // Never "good enough" since every candidate is rejected, so it must
-    // exhaust the full iteration budget and still return its best guess.
-    expect(call).toBe(3);
+    // exhaust the full iteration budget (3) and still return its best guess.
+    // Each iteration now routes leg by leg (start -> p1 -> p2 -> p3 -> start,
+    // 4 legs for a 10km target) rather than one multi-waypoint call, so the
+    // call count is iterations * legs, not iterations - see
+    // routeLoopSegmented() in loopRouteGenerator.ts.
+    expect(call).toBe(12);
     expect(result).toBeDefined();
   });
 
@@ -218,10 +257,8 @@ describe('generateLoopRoute', () => {
   });
 
   it('rejects a candidate whose grade exceeds the elevation gate, in favour of a flatter one', async () => {
-    let call = 0;
     const client: MapyRoutingClient = {
       async route(waypoints) {
-        call++;
         const lengthKm = sumPathKm(waypoints);
         return {
           lengthKm,
@@ -230,9 +267,17 @@ describe('generateLoopRoute', () => {
         };
       },
     };
-    // First call gets a brutal climb, everything after is flat.
+    // The elevation gate only runs once a candidate already passes the
+    // cheaper checks (see loopRouteGenerator.ts) - count those checks
+    // directly rather than raw route() calls, since one candidate is now
+    // several leg calls (routeLoopSegmented), not one. The first such
+    // candidate gets a brutal climb, every one after is flat.
+    let elevationChecks = 0;
     const elevationClient = {
-      elevations: vi.fn(async (points: LatLon[]) => (call === 1 ? points.map((_, i) => i * 200) : points.map(() => 100))),
+      elevations: vi.fn(async (points: LatLon[]) => {
+        elevationChecks++;
+        return elevationChecks === 1 ? points.map((_, i) => i * 200) : points.map(() => 100);
+      }),
     };
 
     const result = await generateLoopRoute(
@@ -245,7 +290,7 @@ describe('generateLoopRoute', () => {
       },
       client,
     );
-    expect(call).toBeGreaterThan(1);
+    expect(elevationChecks).toBeGreaterThan(1);
     // The accepted (best) candidate should not be the brutal-climb one.
     expect(elevationClient.elevations).toHaveBeenCalled();
     const finalCoords = result.geometry.geometry.coordinates;
@@ -253,10 +298,8 @@ describe('generateLoopRoute', () => {
   });
 
   it('rejects a candidate with too much cumulative climbing, even if no single segment is too steep', async () => {
-    let call = 0;
     const client: MapyRoutingClient = {
       async route(waypoints) {
-        call++;
         const lengthKm = sumPathKm(waypoints);
         return {
           lengthKm,
@@ -265,12 +308,17 @@ describe('generateLoopRoute', () => {
         };
       },
     };
-    // First call: a steady, monotonic climb across the (few, multi-km) shape
-    // points - each leg's grade stays comfortably under the 12% cap, but
-    // the total climb over the loop blows well past a 5 m/km budget. Every
-    // call after is flat.
+    // First candidate to reach the elevation gate: a steady, monotonic climb
+    // across the route - each leg's grade stays comfortably under the 12%
+    // cap, but the total climb over the loop blows well past a 5 m/km
+    // budget. Every candidate after is flat. Counts elevation-gate checks
+    // directly (see the comment in the grade-gate test above for why).
+    let elevationChecks = 0;
     const elevationClient = {
-      elevations: vi.fn(async (points: LatLon[]) => (call === 1 ? points.map((_, i) => i * 100) : points.map(() => 100))),
+      elevations: vi.fn(async (points: LatLon[]) => {
+        elevationChecks++;
+        return elevationChecks === 1 ? points.map((_, i) => i * 100) : points.map(() => 100);
+      }),
     };
 
     const result = await generateLoopRoute(
@@ -283,7 +331,7 @@ describe('generateLoopRoute', () => {
       },
       client,
     );
-    expect(call).toBeGreaterThan(1);
+    expect(elevationChecks).toBeGreaterThan(1);
     expect(elevationClient.elevations).toHaveBeenCalled();
     expect(result).toBeDefined();
   });
