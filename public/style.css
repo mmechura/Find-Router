@@ -1,0 +1,97 @@
+:root {
+  color-scheme: light dark;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 1rem 1.25rem 3rem;
+}
+
+header p {
+  color: #666;
+}
+
+.panel {
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.panel h2 {
+  margin-top: 0;
+  font-size: 1.05rem;
+}
+
+label {
+  display: block;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+input {
+  display: block;
+  margin-top: 0.25rem;
+  padding: 0.4rem;
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.row input {
+  flex: 1;
+}
+
+button,
+.button {
+  display: inline-block;
+  padding: 0.55rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #888;
+  background: #f3f3f3;
+  cursor: pointer;
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.95rem;
+}
+
+button.primary,
+.button.primary {
+  background: #1c6f3a;
+  border-color: #1c6f3a;
+  color: white;
+}
+
+#map {
+  height: 320px;
+  border-radius: 6px;
+  margin: 0.75rem 0;
+}
+
+.hint {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.75rem;
+  font-size: 0.9rem;
+}
+
+dt {
+  font-weight: 600;
+}
+
+dd {
+  margin: 0;
+}

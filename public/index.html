@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Find-Router</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Find-Router</h1>
+    <p>Vygeneruje trasu na míru dnešnímu tréninku z intervals.icu, s ohledem na tvůj aktuální stav ze Strava.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>1. Strava</h2>
+      <p id="strava-status">Zjišťuji stav připojení…</p>
+      <a id="strava-connect" href="/auth/strava/login" class="button">Připojit Strava</a>
+    </section>
+
+    <section class="panel">
+      <h2>2. Trénink a výchozí bod</h2>
+      <label>
+        Datum tréninku
+        <input type="date" id="date-input" />
+      </label>
+      <label>
+        Start (lat, lon)
+        <div class="row">
+          <input type="number" step="0.000001" id="lat-input" placeholder="50.075500" />
+          <input type="number" step="0.000001" id="lon-input" placeholder="14.437800" />
+          <button id="locate-btn" type="button">Použít moji polohu</button>
+        </div>
+      </label>
+      <button id="generate-btn" type="button" class="primary">Vygenerovat trasu</button>
+      <p id="status-message"></p>
+    </section>
+
+    <section class="panel" id="workout-panel" hidden>
+      <h2>Plánovaný trénink</h2>
+      <dl id="workout-details"></dl>
+    </section>
+
+    <section class="panel" id="route-panel" hidden>
+      <h2>3. Vygenerovaná trasa</h2>
+      <dl id="route-details"></dl>
+      <div id="map"></div>
+      <a id="planner-link" class="button primary" target="_blank" rel="noopener">
+        Otevřít v Mapy.com a exportovat GPX
+      </a>
+      <p class="hint">
+        V Mapy.com trasu podle potřeby doupravíš a použiješ jejich vlastní export
+        do GPX, který pak nahraješ do Garmin Edge (přes Garmin Connect / Express,
+        nebo přímo přes SD kartu).
+      </p>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
