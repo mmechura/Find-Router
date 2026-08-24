@@ -212,6 +212,17 @@ silnici, a appka neměla ponětí o skutečném terénu. Řeší se to takhle:
    - Opakovací okruh na intervaly dostává jeden jednotný limit (žádná
      přísná okna) — je to jeden krátký úsek s jedním typem úsilí, ne
      sled fází jako hlavní trasa.
+   - **Sklon na úsek nestačí sám o sobě.** Zvlněný terén může mít každý
+     jednotlivý úsek pod limitem (žádný segment není "moc strmý"), a
+     přesto se přes celou trasu nasčítá pěkné převýšení — přesně tohle
+     způsobovalo, že "Radši rovina" na 20km trase klidně vygenerovalo
+     trasu s ~450 m převýšením. `checkRouteElevation()` proto vedle
+     sklonu na úsek počítá i **celkové převýšení** (součet kladných změn
+     nadmořské výšky) a porovnává ho s `STRICT_MAX_GAIN_PER_KM`
+     (10 m/km) × délka trasy — ale **jen když je terén nastavený na
+     "Radši rovina"** (`gainCeilingFor()` v `route.ts`); u "Radši kopce"
+     i automatického režimu, kde appka usoudí, že kopce jsou v pořádku,
+     se tenhle strop vůbec nekontroluje.
 3. **Rychlost je vstup, ne jen odhad.** UI má editovatelné pole
    "Průměrná rychlost" — appka ho předvyplní tvým průměrem z poslední
    Strava historie (`readiness.recentAvgSpeedKmh`), nebo výchozí hodnotou

@@ -12,7 +12,12 @@ import { buildExclusionChecker } from '../routing/excludedZones.js';
 import { buildRoadSnapper } from '../routing/roadSnapper.js';
 import { getRouteStore } from '../routing/routeStore.js';
 import { MapyElevationClient } from '../integrations/elevation.js';
-import { RELAXED_MAX_GRADE_PERCENT, STRICT_MAX_GRADE_PERCENT, type GradeWindow } from '../routing/elevationProfile.js';
+import {
+  RELAXED_MAX_GRADE_PERCENT,
+  STRICT_MAX_GAIN_PER_KM,
+  STRICT_MAX_GRADE_PERCENT,
+  type GradeWindow,
+} from '../routing/elevationProfile.js';
 import type { FatigueReadiness } from '../types.js';
 import type { RoutePlan } from '../routing/planMatcher.js';
 
@@ -29,6 +34,16 @@ interface GenerateBody {
 
 function gradeCeilingFor(preferFlat: boolean | undefined): number {
   return preferFlat ? STRICT_MAX_GRADE_PERCENT : RELAXED_MAX_GRADE_PERCENT;
+}
+
+/**
+ * A per-segment grade ceiling alone doesn't stop a rolling profile that
+ * never exceeds it on any one leg but still climbs a lot in aggregate over
+ * a long loop - so an explicit flat preference also gets a cumulative
+ * climbing budget. Undefined (no cap) when hills are fine.
+ */
+function gainCeilingFor(preferFlat: boolean | undefined): number | undefined {
+  return preferFlat ? STRICT_MAX_GAIN_PER_KM : undefined;
 }
 
 /**
@@ -161,6 +176,7 @@ routeRouter.post('/generate', async (req, res) => {
         elevationGate: {
           client: elevationClient,
           maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+          maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
           strictWindows: warmupCooldownWindows(routeRequest),
         },
       },
@@ -187,7 +203,11 @@ routeRouter.post('/generate', async (req, res) => {
           surface: routeRequest.surface,
           exclusionChecker,
           roadSnapper: roadSnapper ?? undefined,
-          elevationGate: { client: elevationClient, maxGradePercent: gradeCeilingFor(routeRequest.preferFlat) },
+          elevationGate: {
+            client: elevationClient,
+            maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+            maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+          },
         },
         mapy,
       );

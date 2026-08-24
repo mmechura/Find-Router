@@ -1,7 +1,7 @@
 import { clamp, destinationPoint, mulberry32 } from './geo.js';
 import { findBacktrackSpurs } from './spurs.js';
 import { staticExclusionChecker, type ExclusionChecker } from './excludedZones.js';
-import { checkRouteGrade, type GradeWindow } from './elevationProfile.js';
+import { checkRouteElevation, type GradeWindow } from './elevationProfile.js';
 import type { ElevationClient } from '../integrations/elevation.js';
 import type { RoadSnapper } from './roadSnapper.js';
 import type { LatLon, MapyProfile, MapyRouteResult, Sport } from '../types.js';
@@ -43,6 +43,9 @@ export interface LoopRouteRequest {
     client: ElevationClient;
     maxGradePercent: number;
     strictWindows?: GradeWindow[];
+    /** Caps total climbing per km - see STRICT_MAX_GAIN_PER_KM. Omit to
+     *  skip (hills are fine, e.g. preferFlat is false). */
+    maxGainPerKm?: number;
   };
 }
 
@@ -148,17 +151,26 @@ export async function generateLoopRoute(
     // Elevation is a real Mapy.com API call per candidate - only spend it on
     // a candidate that would otherwise already be accepted, instead of on
     // every iteration regardless of whether the cheaper checks even passed.
-    const gradeViolation =
+    const elevationCheck =
       cheapChecksGood && req.elevationGate
-        ? await checkRouteGrade(routeCoords, req.elevationGate.client, {
+        ? await checkRouteElevation(routeCoords, req.elevationGate.client, {
             maxGradePercent: req.elevationGate.maxGradePercent,
             strictWindows: req.elevationGate.strictWindows,
+            maxGainPerKm: req.elevationGate.maxGainPerKm,
           })
         : null;
+    const gradeViolation = elevationCheck?.gradeViolation ?? null;
+    const gainViolation = elevationCheck?.gainViolation ?? null;
 
-    // No-go zones and grade violations are disqualifying, not just "worse":
-    // weighted far above anything distance/spur scoring could offset.
-    const score = (zoneViolation ? 1000 : 0) + (gradeViolation ? 500 : 0) + worstSpurKm * 10 + distanceError;
+    // No-go zones and elevation violations are disqualifying, not just
+    // "worse": weighted far above anything distance/spur scoring could
+    // offset.
+    const score =
+      (zoneViolation ? 1000 : 0) +
+      (gradeViolation ? 500 : 0) +
+      (gainViolation ? 500 : 0) +
+      worstSpurKm * 10 +
+      distanceError;
 
     if (score < bestScore) {
       bestScore = score;
@@ -173,11 +185,11 @@ export async function generateLoopRoute(
       };
     }
 
-    if (cheapChecksGood && !gradeViolation) break;
+    if (cheapChecksGood && !gradeViolation && !gainViolation) break;
 
-    // A shape that keeps clipping a dead end, a no-go zone, or too steep a
-    // grade isn't going to fix itself by nudging the radius - every few
-    // failed attempts, try a simpler shape with fewer forced waypoints
+    // A shape that keeps clipping a dead end, a no-go zone, or too steep/too
+    // much climbing isn't going to fix itself by nudging the radius - every
+    // few failed attempts, try a simpler shape with fewer forced waypoints
     // instead, since each one is an extra chance to land somewhere only
     // reachable by backtracking or with an unwanted hill in the way.
     badStreak++;

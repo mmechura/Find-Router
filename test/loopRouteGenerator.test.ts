@@ -252,6 +252,42 @@ describe('generateLoopRoute', () => {
     expect(finalCoords.length).toBeGreaterThan(0);
   });
 
+  it('rejects a candidate with too much cumulative climbing, even if no single segment is too steep', async () => {
+    let call = 0;
+    const client: MapyRoutingClient = {
+      async route(waypoints) {
+        call++;
+        const lengthKm = sumPathKm(waypoints);
+        return {
+          lengthKm,
+          durationS: lengthKm * 300,
+          geometry: { type: 'Feature', geometry: { type: 'LineString', coordinates: waypoints.map((p) => [p.lon, p.lat]) } },
+        };
+      },
+    };
+    // First call: a steady, monotonic climb across the (few, multi-km) shape
+    // points - each leg's grade stays comfortably under the 12% cap, but
+    // the total climb over the loop blows well past a 5 m/km budget. Every
+    // call after is flat.
+    const elevationClient = {
+      elevations: vi.fn(async (points: LatLon[]) => (call === 1 ? points.map((_, i) => i * 100) : points.map(() => 100))),
+    };
+
+    const result = await generateLoopRoute(
+      {
+        start,
+        targetDistanceKm: 10,
+        sport: 'run',
+        seed: 1,
+        elevationGate: { client: elevationClient, maxGradePercent: 12, maxGainPerKm: 5 },
+      },
+      client,
+    );
+    expect(call).toBeGreaterThan(1);
+    expect(elevationClient.elevations).toHaveBeenCalled();
+    expect(result).toBeDefined();
+  });
+
   it('only queries the elevation gate once the cheaper checks already pass (cost control)', async () => {
     const rejectEverything = { check: () => ({ name: 'always bad', contains: () => true }) };
     const elevationClient = { elevations: vi.fn(async (points: LatLon[]) => points.map(() => 100)) };

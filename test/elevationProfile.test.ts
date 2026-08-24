@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkRouteGrade } from '../src/routing/elevationProfile.js';
+import { checkRouteElevation, checkRouteGrade } from '../src/routing/elevationProfile.js';
 import type { ElevationClient } from '../src/integrations/elevation.js';
 import type { LatLon } from '../src/types.js';
 
@@ -56,5 +56,33 @@ describe('checkRouteGrade', () => {
   it('returns null for fewer than two points', async () => {
     const client = fakeElevationClient([100]);
     expect(await checkRouteGrade([{ lat: 50, lon: 14 }], client, { maxGradePercent: 4 })).toBeNull();
+  });
+});
+
+describe('checkRouteElevation (cumulative gain)', () => {
+  it('flags a rolling profile that stays under the per-segment grade limit but climbs too much overall', async () => {
+    const coords = latSteps(11); // 10 legs of ~111m each
+    // Alternating +8m/-8m every leg: ~7.2% grade (fine under a 12% cap),
+    // but 5 climbing legs x 8m = 40m of total gain over ~1.1km.
+    const client = fakeElevationClient([100, 108, 100, 108, 100, 108, 100, 108, 100, 108, 100]);
+
+    const result = await checkRouteElevation(coords, client, { maxGradePercent: 12, maxGainPerKm: 10 });
+    expect(result.gradeViolation).toBeNull();
+    expect(result.gainViolation).not.toBeNull();
+    expect(result.gainViolation!.totalGainM).toBeCloseTo(40, 0);
+  });
+
+  it('does not flag cumulative gain for a genuinely flat profile', async () => {
+    const coords = latSteps(11);
+    const client = fakeElevationClient(Array(11).fill(100));
+    const result = await checkRouteElevation(coords, client, { maxGradePercent: 12, maxGainPerKm: 10 });
+    expect(result.gainViolation).toBeNull();
+  });
+
+  it('skips the cumulative gain check entirely when maxGainPerKm is omitted', async () => {
+    const coords = latSteps(11);
+    const client = fakeElevationClient([100, 108, 100, 108, 100, 108, 100, 108, 100, 108, 100]);
+    const result = await checkRouteElevation(coords, client, { maxGradePercent: 12 });
+    expect(result.gainViolation).toBeNull();
   });
 });
