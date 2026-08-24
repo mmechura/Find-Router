@@ -1,4 +1,6 @@
 import { clamp, destinationPoint, mulberry32 } from './geo.js';
+import { findBacktrackSpurs } from './spurs.js';
+import { findExcludedZoneViolation } from './excludedZones.js';
 import type { LatLon, MapyProfile, MapyRouteResult, Sport } from '../types.js';
 
 export interface MapyRoutingClient {
@@ -18,6 +20,8 @@ export interface LoopRouteRequest {
   maxIterations?: number;
   /** Acceptable relative error vs. targetDistanceKm, e.g. 0.07 = +/-7%. */
   toleranceRatio?: number;
+  /** Round-trip out-and-back length (km) below which a backtrack is tolerated as noise. */
+  maxAcceptableSpurKm?: number;
 }
 
 export interface LoopRouteResult {
@@ -27,10 +31,19 @@ export interface LoopRouteResult {
   geometry: MapyRouteResult['geometry'];
   profile: MapyProfile;
   iterations: number;
+  /** Longest detected dead-end out-and-back detour in the final route, for visibility/debugging. */
+  worstSpurKm: number;
 }
 
+/**
+ * Bike routes always use `bike_road` (paved): this app targets road-bike
+ * training (slick tires), so `bike_mountain` - which favours unpaved
+ * trails - is never an acceptable surface, regardless of terrain
+ * preference. Hilly-vs-flat for bikes is expressed elsewhere (route
+ * shaping), not by switching to an off-road profile.
+ */
 export function pickProfile(sport: Sport, preferFlat = false): MapyProfile {
-  if (sport === 'bike') return preferFlat ? 'bike_road' : 'bike_mountain';
+  if (sport === 'bike') return 'bike_road';
   return preferFlat ? 'foot_fast' : 'foot_hiking';
 }
 
@@ -74,7 +87,13 @@ export async function generateLoopRoute(
   const pointCount = pickShapePointCount(req.targetDistanceKm);
   const rng = mulberry32(req.seed ?? Date.now());
   const toleranceRatio = req.toleranceRatio ?? 0.07;
-  const maxIterations = req.maxIterations ?? 5;
+  // A bit higher than the distance-only version: some of these iterations
+  // may need to be "spent" rerolling a shape that clips a dead end or a
+  // no-go zone rather than just refining distance.
+  const maxIterations = req.maxIterations ?? 8;
+  // Round-trip length below which a backtrack is treated as noise (e.g. a
+  // short driveway) rather than the annoying "in 150m, turn around" spur.
+  const maxAcceptableSpurKm = req.maxAcceptableSpurKm ?? 0.12;
 
   // Circumference of a circle = 2*pi*r, so this is the starting guess for a
   // loop of length targetDistanceKm; real paths rarely follow it exactly,
@@ -82,16 +101,24 @@ export async function generateLoopRoute(
   let radiusKm = req.targetDistanceKm / (2 * Math.PI);
 
   let best: LoopRouteResult | undefined;
-  let bestError = Infinity;
+  let bestScore = Infinity;
 
   for (let iteration = 1; iteration <= maxIterations; iteration++) {
     const shapePoints = buildLoopWaypoints(req.start, radiusKm, pointCount, rng);
     const waypoints = [req.start, ...shapePoints, req.start];
     const result = await mapy.route(waypoints, profile);
 
-    const error = Math.abs(result.lengthKm / req.targetDistanceKm - 1);
-    if (error < bestError) {
-      bestError = error;
+    const routeCoords: LatLon[] = result.geometry.geometry.coordinates.map(([lon, lat]) => ({ lat, lon }));
+    const { worstSpurKm } = findBacktrackSpurs(routeCoords);
+    const zoneViolation = findExcludedZoneViolation(routeCoords);
+
+    const distanceError = Math.abs(result.lengthKm / req.targetDistanceKm - 1);
+    // A no-go zone is disqualifying, not just "worse": weight it far above
+    // anything distance/spur scoring could otherwise offset.
+    const score = (zoneViolation ? 1000 : 0) + worstSpurKm * 10 + distanceError;
+
+    if (score < bestScore) {
+      bestScore = score;
       best = {
         waypoints,
         actualDistanceKm: result.lengthKm,
@@ -99,10 +126,12 @@ export async function generateLoopRoute(
         geometry: result.geometry,
         profile,
         iterations: iteration,
+        worstSpurKm,
       };
     }
 
-    if (error <= toleranceRatio) break;
+    const isGoodEnough = !zoneViolation && distanceError <= toleranceRatio && worstSpurKm <= maxAcceptableSpurKm;
+    if (isGoodEnough) break;
 
     const ratio = result.lengthKm / req.targetDistanceKm;
     // Guard against a degenerate 0-length response before dividing.

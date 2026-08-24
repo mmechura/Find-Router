@@ -44,7 +44,19 @@
   cílové vzdálenosti navrhne tvarové body okruhu, nechá je Mapy.com
   Routing API "přichytit" na skutečné cesty a iterativně upravuje poloměr,
   dokud se skutečná délka trasy neshoduje s cílovou (výchozí tolerance 7 %,
-  max. 5 iterací).
+  max. 8 iterací). Každý kandidát se zároveň hodnotí podle `spurs.ts`
+  (nechce žádný ošklivý slepý výběžek) a `excludedZones.ts` (nesmí vůbec
+  vstoupit do zakázané zóny) — pokud kandidát neprojde, appka to nevzdá,
+  jen si nechá vygenerovat jiný tvar okruhu v další iteraci a na konci
+  vrátí nejlepší z těch, co viděla.
+- `src/routing/spurs.ts` — detekuje "tam a zase zpátky" úseky v trase:
+  když Mapy.com kvůli slepé uličce/vjezdu jinak nemůže danou trasu
+  spojit, vrátí trasu, která do ní zajede a stejnou cestou se vrátí. Pozná
+  se to jako zrcadlová symetrie v sekvenci souřadnic kolem bodu obratu.
+- `src/routing/excludedZones.ts` — ruční seznam oblastí, kam appka nesmí
+  routovat vůbec (uzavřené/oplocené areály apod.), i kdyby je Mapy.com
+  ochotné projet. Zatím jen jednoduchý obdélník (bounding box), ne
+  přesná geometrie — stačí to k vyřazení celého kandidáta.
 - `src/routing/readiness.ts` — zjednodušený odhad akutní/chronické zátěže
   ze Strava aktivit (náhrada za skutečné HRV/klidový tep, které Strava
   API neposkytuje) + průměrné tempo pro daný sport.
@@ -103,12 +115,27 @@ Proto appka po přečtení plánovaného tréninku:
    trasa v pořádku, nebo přímo žádoucí (kopcové intervaly, zajímavější
    terén na těžký trénink).
 
+## Povrch a zakázané zóny
+
+- **Kolo je vždy jen po asfaltu.** `pickProfile()` pro `sport: 'bike'` vrací
+  vždy `bike_road`, nikdy `bike_mountain` — appka počítá s tréninkem na
+  silničním kole (galuskách), takže terén/nezpevněné cesty jsou vyloučené
+  bez ohledu na preferenci rovina/kopce (ta u kola teď na volbu profilu
+  nemá vliv, řeší se to jen skrz `bike_road`, který sám o sobě klidně
+  vede do kopců, jen po silnici).
+- **Zakázané zóny** (`excludedZones.ts`): appka nikdy nevrátí trasu, která
+  prochází uzavřeným/oploceným areálem uvedeným v seznamu. Zatím je tam
+  jen jeden odhadovaný obdélník pro Třinecké železárny — přesnost si
+  ověř a případně oprav podle skutečných souřadnic (pravý klik na dva
+  protilehlé rohy areálu v mapy.com → "Zkopírovat souřadnice"). Narazíš-li
+  na další podobné místo, přidej ho do `EXCLUDED_ZONES` stejným způsobem.
+
 ## Další vědomá omezení
 
 - **Elevace/převýšení**: Mapy.com Routing API v dokumentovaném rozsahu
-  nevrací převýšení po bodech, takže volba "rovina vs. kopce" jde jen přes
-  profil (`foot_fast`/`bike_road` vs. `foot_hiking`/`bike_mountain`), ne
-  přes tvrdou metrickou záruku převýšení.
+  nevrací převýšení po bodech, takže volba "rovina vs. kopce" u běhu jde
+  jen přes profil (`foot_fast` vs. `foot_hiking`), ne přes tvrdou
+  metrickou záruku převýšení.
 - **Odhad tempa bez Strava historie**: pokud Strava není připojená nebo
   nemá aktivity daného sportu, použije se konzervativní výchozí tempo
   (běh 10 km/h, kolo 25 km/h) jen pro převod plánované doby na vzdálenost.

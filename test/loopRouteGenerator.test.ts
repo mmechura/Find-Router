@@ -36,10 +36,15 @@ function fakeMapyClient(detourFactor = 1.2): MapyRoutingClient {
 }
 
 describe('pickProfile', () => {
-  it('maps sport + preference to a Mapy.com profile', () => {
+  it('maps run terrain preference to a Mapy.com profile', () => {
     expect(pickProfile('run', false)).toBe('foot_hiking');
     expect(pickProfile('run', true)).toBe('foot_fast');
-    expect(pickProfile('bike', false)).toBe('bike_mountain');
+  });
+
+  it('always uses the paved bike_road profile for bike, regardless of terrain preference', () => {
+    // Road bike / slick tires: bike_mountain (unpaved trails) is never
+    // acceptable, so preferFlat has no effect on the bike profile.
+    expect(pickProfile('bike', false)).toBe('bike_road');
     expect(pickProfile('bike', true)).toBe('bike_road');
   });
 });
@@ -93,5 +98,72 @@ describe('generateLoopRoute', () => {
     await expect(
       generateLoopRoute({ start, targetDistanceKm: 0, sport: 'run' }, fakeMapyClient()),
     ).rejects.toThrow();
+  });
+
+  it('keeps trying past a candidate with a bad dead-end spur, in favour of a clean one', async () => {
+    let call = 0;
+    const client: MapyRoutingClient = {
+      async route(waypoints) {
+        call++;
+        if (call === 1) {
+          // A deliberately "perfect distance, ugly shape" first candidate:
+          // straight out to a point 300m away and directly back - a spur
+          // well above the default 0.12km tolerance.
+          const mid = waypoints[Math.floor(waypoints.length / 2)];
+          const spurTip = { lat: mid.lat + 0.0027, lon: mid.lon }; // ~300m north
+          const coords = [...waypoints.slice(0, Math.floor(waypoints.length / 2) + 1), spurTip, mid, ...waypoints.slice(Math.floor(waypoints.length / 2) + 1)];
+          const lengthKm = sumPathKm(coords);
+          return {
+            lengthKm,
+            durationS: lengthKm * 300,
+            geometry: {
+              type: 'Feature',
+              geometry: { type: 'LineString', coordinates: coords.map((p) => [p.lon, p.lat]) },
+            },
+          };
+        }
+        const lengthKm = sumPathKm(waypoints) * 1.2;
+        return {
+          lengthKm,
+          durationS: lengthKm * 300,
+          geometry: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: waypoints.map((p) => [p.lon, p.lat]) },
+          },
+        };
+      },
+    };
+
+    const result = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 5 }, client);
+    expect(result.worstSpurKm).toBeLessThanOrEqual(0.12);
+    expect(call).toBeGreaterThan(1);
+  });
+
+  it('never accepts a route that enters an excluded zone, even if the distance matches perfectly', async () => {
+    let call = 0;
+    const client: MapyRoutingClient = {
+      async route(waypoints) {
+        call++;
+        // First candidate deliberately routed straight through the
+        // Třinecké železárny exclusion box (see excludedZones.ts).
+        const coords = call === 1 ? [{ lat: 49.685, lon: 18.63 }, ...waypoints] : waypoints;
+        const lengthKm = sumPathKm(coords);
+        return {
+          lengthKm,
+          durationS: lengthKm * 300,
+          geometry: {
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: coords.map((p) => [p.lon, p.lat]) },
+          },
+        };
+      },
+    };
+
+    const result = await generateLoopRoute({ start, targetDistanceKm: 10, sport: 'run', seed: 3 }, client);
+    const violatesZone = result.geometry.geometry.coordinates.some(
+      ([lon, lat]) => lat > 49.679 && lat < 49.696 && lon > 18.614 && lon < 18.646,
+    );
+    expect(violatesZone).toBe(false);
+    expect(call).toBeGreaterThan(1);
   });
 });
