@@ -67,4 +67,50 @@ describe('buildRouteRequest', () => {
     const req = buildRouteRequest(workout, start);
     expect(req.preferFlat).toBe(true);
   });
+
+  it('does NOT force a flat route just because the workout has intervals', () => {
+    const workout: PlannedWorkout = {
+      id: '5',
+      date: '2026-08-24',
+      name: 'Intervaly',
+      type: 'Run',
+      description: 'Rozcvička 2km, 6x1km (400m klus), 2km vyklusání',
+    };
+    const req = buildRouteRequest(workout, start, { acuteToChronicRatio: 1, fatigueLevel: 'moderate' });
+    // Intervals/intense sessions are exactly where a hillier route is fine
+    // (or even desirable) -- only fatigue/explicit recovery should flatten it.
+    expect(req.preferFlat).toBe(false);
+  });
+
+  it('still flattens an interval workout when fatigue is high', () => {
+    const workout: PlannedWorkout = {
+      id: '6',
+      date: '2026-08-24',
+      name: 'Intervaly',
+      type: 'Run',
+      description: '6x1km (400m klus)',
+    };
+    const req = buildRouteRequest(workout, start, { acuteToChronicRatio: 1.5, fatigueLevel: 'high' });
+    expect(req.preferFlat).toBe(true);
+  });
+
+  it('sums a parsed structure into the target distance when no explicit distance is set', () => {
+    const workout: PlannedWorkout = {
+      id: '7',
+      date: '2026-08-24',
+      name: 'Intervaly',
+      type: 'Run',
+      description: 'Rozcvička 2km, 6x1km (400m klus), 2km vyklusání',
+    };
+    const req = buildRouteRequest(workout, start);
+    // 2 (warmup) + 6x1 (work) + 5x0.4 (recovery between reps) + 2 (cooldown) = 12 km
+    expect(req.targetDistanceKm).toBeCloseTo(12, 5);
+    expect(req.repeatSegmentKm).toBeCloseTo(1.4, 5);
+  });
+
+  it('leaves repeatSegmentKm unset for a plain, non-structured workout', () => {
+    const workout: PlannedWorkout = { id: '8', date: '2026-08-24', name: 'Easy run', type: 'Run', distanceM: 8000 };
+    const req = buildRouteRequest(workout, start);
+    expect(req.repeatSegmentKm).toBeUndefined();
+  });
 });

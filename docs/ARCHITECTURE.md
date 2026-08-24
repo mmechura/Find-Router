@@ -48,9 +48,12 @@
 - `src/routing/readiness.ts` — zjednodušený odhad akutní/chronické zátěže
   ze Strava aktivit (náhrada za skutečné HRV/klidový tep, které Strava
   API neposkytuje) + průměrné tempo pro daný sport.
-- `src/routing/planMatcher.ts` — spojuje plánovaný trénink a readiness do
-  konkrétního požadavku na trasu (cílová vzdálenost, sport, preference
-  rovinatosti).
+- `src/routing/workoutSteps.ts` — heuristický textový parser struktury
+  tréninku (rozcvička/úseky/zotavení/vyklusání) z názvu a popisu tréninku
+  v intervals.icu, viz níže.
+- `src/routing/planMatcher.ts` — spojuje plánovaný trénink, jeho případnou
+  strukturu a readiness do konkrétního požadavku na trasu (cílová
+  vzdálenost, sport, preference terénu).
 - `src/integrations/mapy.ts` — klient Mapy.com REST Routing API a
   generátor odkazu do plánovače Mapy.com.
 - `src/integrations/strava.ts` — OAuth2 tok (authorize/token/refresh) a
@@ -58,16 +61,50 @@
 - `src/integrations/intervals.ts` — čtení plánovaných tréninků
   (kalendářní eventy s `category=WORKOUT`).
 
-## Vědomá omezení
+## Jak appka pracuje s intervaly
+
+Tohle je hlavní důvod, proč appka vznikla, tak stojí za samostatné vysvětlení.
+
+**Důležité: GPX/trasa nese jen geometrii, ne tempo.** Garmin Edge umí
+"pípat" na jednotlivé úseky (zahřátí / tvrdý úsek / volno) jedině přes
+**strukturovaný trénink** nahraný samostatně (typicky přímo z intervals.icu
+do Garmin Connect) — to appka neřeší a řešit nepotřebuje, protože to už
+funguje. Úkolem appky je najít **správné místo**: trasu se správnou
+celkovou vzdálenostní/terénem, a pro opakované úseky bezpečně opakovatelný
+krátký okruh.
+
+Proto appka po přečtení plánovaného tréninku:
+
+1. Zkusí z názvu a popisu tréninku rozpoznat strukturu (`workoutSteps.ts`) —
+   rozcvičku, N opakování daného úseku (s volitelným zotavením mezi nimi) a
+   vyklusání. Je to textový heuristický parser (regulární výrazy na běžné
+   formulace typu "6x1km (400m klus)" nebo "Warm up 10min, 8x400m, cool
+   down 10min"), ne čtení skutečného strukturovaného pole z intervals.icu —
+   k jeho přesnému schématu (`workout_doc`/`icu_intervals`) jsem se při
+   stavbě appky nedostal (intervals.icu bylo z vývojového prostředí
+   nedostupné). Očekávej, že vzorce bude potřeba doladit podle reálných
+   popisů tvých tréninků.
+2. Pokud strukturu rozpozná a trénink nemá explicitní celkovou vzdálenost,
+   spočítá ji součtem všech úseků (přesnější než starý odhad
+   "doba × tempo").
+3. Spočítá `repeatSegmentKm` — délku jednoho tvrdého úseku + zotavení po
+   něm. Pokud existuje, appka vedle hlavní trasy vygeneruje **druhý, krátký
+   okruh** přesně této délky — to je místo, kde fyzicky odběháš/odjedeš
+   daný počet opakování, místo aby appka nesmyslně cpala 6× stejný úsek do
+   jedné dlouhé unikátní trasy.
+4. **Terén se kvůli intervalům nezplošťuje.** Rovinu appka volí jen když má
+   jít o opravdu volný/regenerační trénink (vysoká únava ze Strava dat,
+   nebo klíčová slova jako "recovery"/"volno" v názvu) — intervalový nebo
+   jinak intenzivní trénink je naopak typický případ, kdy je kopcovitější
+   trasa v pořádku, nebo přímo žádoucí (kopcové intervaly, zajímavější
+   terén na těžký trénink).
+
+## Další vědomá omezení
 
 - **Elevace/převýšení**: Mapy.com Routing API v dokumentovaném rozsahu
-  nevrací převýšení po bodech, takže "vyhýbání se kopcům" je jen heuristika
-  přes volbu profilu (`foot_fast`/`bike_road` vs. `foot_hiking`/
-  `bike_mountain`), ne tvrdá záruka.
-- **Strukturované intervaly**: generátor cílí na celkovou vzdálenost/čas
-  tréninku, ne na konkrétní strukturu (např. 6× 1 km na rovině + rozcvička
-  do kopce). Rozšíření o segmentaci trasy podle `icu_intervals` je
-  navazující krok.
+  nevrací převýšení po bodech, takže volba "rovina vs. kopce" jde jen přes
+  profil (`foot_fast`/`bike_road` vs. `foot_hiking`/`bike_mountain`), ne
+  přes tvrdou metrickou záruku převýšení.
 - **Odhad tempa bez Strava historie**: pokud Strava není připojená nebo
   nemá aktivity daného sportu, použije se konzervativní výchozí tempo
   (běh 10 km/h, kolo 25 km/h) jen pro převod plánované doby na vzdálenost.

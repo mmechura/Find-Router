@@ -3,7 +3,7 @@ import { config } from '../config.js';
 import { IntervalsClient } from '../integrations/intervals.js';
 import { MapyClient, buildMapyPlannerUrl } from '../integrations/mapy.js';
 import { StravaClient } from '../integrations/strava.js';
-import { loadStravaTokens } from '../tokenStore.js';
+import { getValidStravaAccessToken } from '../stravaSession.js';
 import { computeReadiness } from '../routing/readiness.js';
 import { buildRouteRequest, mapIntervalsTypeToSport } from '../routing/planMatcher.js';
 import { generateLoopRoute } from '../routing/loopRouteGenerator.js';
@@ -38,17 +38,17 @@ routeRouter.post('/generate', async (req, res) => {
     }
 
     let readiness: FatigueReadiness | undefined;
-    const tokens = loadStravaTokens();
-    if (tokens) {
-      try {
-        const strava = new StravaClient(tokens.access_token);
+    try {
+      const accessToken = await getValidStravaAccessToken();
+      if (accessToken) {
+        const strava = new StravaClient(accessToken);
         const recent = await strava.listRecentActivities(28);
         readiness = computeReadiness(recent, mapIntervalsTypeToSport(workout.type));
-      } catch {
-        // Strava is an optional enrichment signal — a token issue (e.g.
-        // expired access token) should not block route generation.
-        readiness = undefined;
       }
+    } catch {
+      // Strava is an optional enrichment signal — a token issue (e.g.
+      // expired refresh token) should not block route generation.
+      readiness = undefined;
     }
 
     const start = { lat, lon };
@@ -57,7 +57,35 @@ routeRouter.post('/generate', async (req, res) => {
     const route = await generateLoopRoute(routeRequest, mapy);
     const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);
 
-    res.json({ workout, readiness, request: routeRequest, route, plannerUrl });
+    // For an interval workout, also propose a short loop sized to one
+    // work+recovery cycle - a practical place to physically repeat the hard
+    // reps, since a single long GPX track can't carry per-rep pace cues
+    // anyway (see README). Same terrain preference as the main route: an
+    // interval session isn't forced flat, so neither is this.
+    let repeatRoute: Awaited<ReturnType<typeof generateLoopRoute>> | undefined;
+    let repeatPlannerUrl: string | undefined;
+    if (routeRequest.repeatSegmentKm && routeRequest.repeatSegmentKm >= 0.15) {
+      repeatRoute = await generateLoopRoute(
+        {
+          start,
+          targetDistanceKm: routeRequest.repeatSegmentKm,
+          sport: routeRequest.sport,
+          preferFlat: routeRequest.preferFlat,
+        },
+        mapy,
+      );
+      repeatPlannerUrl = buildMapyPlannerUrl(repeatRoute.waypoints, repeatRoute.profile);
+    }
+
+    res.json({
+      workout,
+      readiness,
+      request: routeRequest,
+      route,
+      plannerUrl,
+      repeatRoute,
+      repeatPlannerUrl,
+    });
   } catch (err) {
     res.status(502).json({ error: (err as Error).message });
   }

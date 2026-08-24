@@ -11,24 +11,47 @@ const workoutDetails = document.getElementById('workout-details');
 const routePanel = document.getElementById('route-panel');
 const routeDetails = document.getElementById('route-details');
 const plannerLink = document.getElementById('planner-link');
+const repeatPanel = document.getElementById('repeat-panel');
+const repeatDetails = document.getElementById('repeat-details');
+const repeatPlannerLink = document.getElementById('repeat-planner-link');
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 
-let map;
-let routeLayer;
-
-// Map preview uses OpenStreetMap tiles (no API key needed, always works).
+// Map previews use OpenStreetMap tiles (no API key needed, always works).
 // The route itself is computed via the Mapy.com Routing API and handed off
 // to Mapy.com's own planner for the final view + GPX export - see README
 // for why the preview basemap and the routing/export provider differ.
-function ensureMap() {
-  if (map) return map;
-  map = L.map('map').setView([50.0755, 14.4378], 13);
+const maps = {}; // elementId -> { map, layer }
+
+function ensureMap(elementId) {
+  if (maps[elementId]) return maps[elementId].map;
+  const map = L.map(elementId).setView([50.0755, 14.4378], 13);
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; OpenStreetMap contributors',
     maxZoom: 19,
   }).addTo(map);
+  maps[elementId] = { map, layer: null };
   return map;
+}
+
+function drawRoute(elementId, route) {
+  const map = ensureMap(elementId);
+  const entry = maps[elementId];
+  if (entry.layer) map.removeLayer(entry.layer);
+  const latlngs = route.geometry.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+  entry.layer = L.polyline(latlngs, { color: '#1c6f3a', weight: 4 }).addTo(map);
+  map.fitBounds(entry.layer.getBounds(), { padding: [20, 20] });
+}
+
+function renderDetails(container, rows) {
+  container.innerHTML = '';
+  for (const [label, value] of rows) {
+    const dt = document.createElement('dt');
+    dt.textContent = label;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    container.append(dt, dd);
+  }
 }
 
 function setStatus(message, isError = false) {
@@ -87,28 +110,29 @@ function renderWorkout(workout) {
 
 function renderRoute(route, plannerUrl) {
   routePanel.hidden = false;
-  routeDetails.innerHTML = '';
-  const rows = [
+  renderDetails(routeDetails, [
     ['Vygenerovaná vzdálenost', `${route.actualDistanceKm.toFixed(2)} km`],
     ['Odhadovaný čas', `${Math.round(route.durationS / 60)} min`],
     ['Profil trasy', route.profile],
     ['Iterací do shody', String(route.iterations)],
-  ];
-  for (const [label, value] of rows) {
-    const dt = document.createElement('dt');
-    dt.textContent = label;
-    const dd = document.createElement('dd');
-    dd.textContent = value;
-    routeDetails.append(dt, dd);
-  }
-
-  const leafletMap = ensureMap();
-  if (routeLayer) leafletMap.removeLayer(routeLayer);
-  const latlngs = route.geometry.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
-  routeLayer = L.polyline(latlngs, { color: '#1c6f3a', weight: 4 }).addTo(leafletMap);
-  leafletMap.fitBounds(routeLayer.getBounds(), { padding: [20, 20] });
-
+  ]);
+  drawRoute('map', route);
   plannerLink.href = plannerUrl;
+}
+
+function renderRepeatRoute(route, plannerUrl) {
+  if (!route) {
+    repeatPanel.hidden = true;
+    return;
+  }
+  repeatPanel.hidden = false;
+  renderDetails(repeatDetails, [
+    ['Délka jednoho okruhu', `${route.actualDistanceKm.toFixed(2)} km`],
+    ['Odhadovaný čas okruhu', `${Math.round(route.durationS / 60)} min`],
+    ['Profil trasy', route.profile],
+  ]);
+  drawRoute('repeat-map', route);
+  repeatPlannerLink.href = plannerUrl;
 }
 
 generateBtn.addEventListener('click', async () => {
@@ -134,6 +158,7 @@ generateBtn.addEventListener('click', async () => {
     }
     renderWorkout(data.workout);
     renderRoute(data.route, data.plannerUrl);
+    renderRepeatRoute(data.repeatRoute, data.repeatPlannerUrl);
     setStatus('Hotovo.');
   } catch (err) {
     setStatus(`Chyba: ${err.message}`, true);

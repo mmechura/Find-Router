@@ -70,7 +70,8 @@ button.primary,
   color: white;
 }
 
-#map {
+#map,
+#repeat-map {
   height: 320px;
   border-radius: 6px;
   margin: 0.75rem 0;
