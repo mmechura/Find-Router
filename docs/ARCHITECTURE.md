@@ -139,12 +139,16 @@ Proto appka po přečtení plánovaného tréninku:
    okruh** přesně této délky — to je místo, kde fyzicky odběháš/odjedeš
    daný počet opakování, místo aby appka nesmyslně cpala 6× stejný úsek do
    jedné dlouhé unikátní trasy.
-4. **Terén se kvůli intervalům nezplošťuje.** Rovinu appka volí jen když má
-   jít o opravdu volný/regenerační trénink (vysoká únava ze Strava dat,
-   nebo klíčová slova jako "recovery"/"volno" v názvu) — intervalový nebo
-   jinak intenzivní trénink je naopak typický případ, kdy je kopcovitější
-   trasa v pořádku, nebo přímo žádoucí (kopcové intervaly, zajímavější
-   terén na těžký trénink).
+4. **Terén se kvůli intervalům nezplošťuje** — pokud si výslovně nezvolíš
+   jinak. Automatický režim volí rovinu jen když má jít o opravdu
+   volný/regenerační trénink (vysoká únava ze Strava dat, nebo klíčová
+   slova jako "recovery"/"volno" v názvu) — intervalový nebo jinak
+   intenzivní trénink je naopak typický případ, kdy je kopcovitější trasa
+   v pořádku, nebo přímo žádoucí (kopcové intervaly, zajímavější terén na
+   těžký trénink). V UI je navíc přepínač **Terén** (Automaticky / Radši
+   rovina / Radši kopce, `terrain` v `BuildRouteOptions`) — zvolíš-li
+   výslovně rovinu nebo kopce, přebije to tenhle automatický odhad úplně,
+   ať appka dělá cokoli jiného (workoutSteps, readiness).
 
 ## Povrch a zakázané zóny
 

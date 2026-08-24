@@ -224,13 +224,14 @@ async function loadPreview() {
   }
 
   const surface = document.querySelector('input[name="surface"]:checked')?.value || 'road';
+  const terrain = document.querySelector('input[name="terrain"]:checked')?.value || 'auto';
   const speedKmh = speedTouchedByUser && speedInput.value ? parseFloat(speedInput.value) : undefined;
 
   try {
     const res = await fetch('/api/route/preview', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, speedKmh }),
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, terrain, speedKmh }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -265,6 +266,7 @@ dateInput.addEventListener('change', schedulePreview);
 latInput.addEventListener('input', schedulePreview);
 lonInput.addEventListener('input', schedulePreview);
 document.querySelectorAll('input[name="surface"]').forEach((el) => el.addEventListener('change', schedulePreview));
+document.querySelectorAll('input[name="terrain"]').forEach((el) => el.addEventListener('change', schedulePreview));
 
 function renderWorkout(workout) {
   workoutPanel.hidden = false;
@@ -316,11 +318,12 @@ generateBtn.addEventListener('click', async () => {
   generateBtn.disabled = true;
   try {
     const surface = document.querySelector('input[name="surface"]:checked')?.value || 'road';
+    const terrain = document.querySelector('input[name="terrain"]:checked')?.value || 'auto';
     const speedKmh = speedInput.value ? parseFloat(speedInput.value) : undefined;
     const res = await fetch('/api/route/generate', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, speedKmh }),
+      body: JSON.stringify({ date: dateInput.value, lat, lon, surface, terrain, speedKmh }),
     });
     const data = await res.json();
     if (!res.ok) {

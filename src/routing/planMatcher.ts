@@ -35,6 +35,9 @@ export interface BuildRouteOptions {
   /** Overrides Strava-derived/default pace for every estimate (target
    *  distance from duration, warmup/cooldown split, repeat segment size). */
   speedOverrideKmh?: number;
+  /** Explicit user choice that overrides the automatic flat/hilly
+   *  heuristic below. Undefined (or 'auto') keeps the heuristic. */
+  terrain?: 'auto' | 'flat' | 'hilly';
 }
 
 export function mapIntervalsTypeToSport(type: string): Sport {
@@ -57,6 +60,8 @@ function estimateDistanceKm(movingTimeS: number, paceKmh: number): number {
  * otherwise intense workout is exactly the case where a hillier route can
  * be the right call (hill repeats, more engaging terrain for a hard
  * session), so it's left to lean hilly by default like everything else.
+ * `options.terrain` lets the user override that heuristic outright when
+ * they just want flatter or hillier terrain regardless of the workout.
  */
 export function buildRouteRequest(
   workout: PlannedWorkout,
@@ -76,9 +81,11 @@ export function buildRouteRequest(
       : estimateDistanceKm(workout.movingTimeS ?? 3600, paceKmh);
 
   const preferFlat =
-    readiness?.fatigueLevel === 'high' ||
-    RECOVERY_KEYWORDS.test(workout.name) ||
-    RECOVERY_KEYWORDS.test(workout.description ?? '');
+    options.terrain === 'flat' ||
+    (options.terrain !== 'hilly' &&
+      (readiness?.fatigueLevel === 'high' ||
+        RECOVERY_KEYWORDS.test(workout.name) ||
+        RECOVERY_KEYWORDS.test(workout.description ?? '')));
 
   const repeatSegmentKm = structure ? (repeatSegmentDistanceKm(structure.steps, paceKmh) ?? undefined) : undefined;
 

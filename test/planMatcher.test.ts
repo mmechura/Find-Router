@@ -94,6 +94,30 @@ describe('buildRouteRequest', () => {
     expect(req.preferFlat).toBe(true);
   });
 
+  it("forces a flat route when terrain override is 'flat', even for an intense workout", () => {
+    const workout: PlannedWorkout = {
+      id: '13',
+      date: '2026-08-24',
+      name: 'Intervaly',
+      type: 'Run',
+      description: '6x1km (400m klus)',
+    };
+    const req = buildRouteRequest(workout, start, undefined, { terrain: 'flat' });
+    expect(req.preferFlat).toBe(true);
+  });
+
+  it("forces a hilly route when terrain override is 'hilly', even with high fatigue/recovery", () => {
+    const workout: PlannedWorkout = { id: '14', date: '2026-08-24', name: 'Recovery shakeout', type: 'Run', distanceM: 5000 };
+    const req = buildRouteRequest(workout, start, { acuteToChronicRatio: 1.5, fatigueLevel: 'high' }, { terrain: 'hilly' });
+    expect(req.preferFlat).toBe(false);
+  });
+
+  it("keeps the automatic heuristic when terrain override is 'auto' or unset", () => {
+    const workout: PlannedWorkout = { id: '15', date: '2026-08-24', name: 'Recovery shakeout', type: 'Run', distanceM: 5000 };
+    expect(buildRouteRequest(workout, start, undefined, { terrain: 'auto' }).preferFlat).toBe(true);
+    expect(buildRouteRequest(workout, start).preferFlat).toBe(true);
+  });
+
   it('sums a parsed structure into the target distance when no explicit distance is set', () => {
     const workout: PlannedWorkout = {
       id: '7',

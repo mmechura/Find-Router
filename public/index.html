@@ -59,6 +59,12 @@
           <label class="inline"><input type="radio" name="surface" value="road" checked /> Silnice (galusky)</label>
           <label class="inline"><input type="radio" name="surface" value="gravel" /> Gravel (nezpevněné ok)</label>
         </fieldset>
+        <fieldset id="terrain-field">
+          <legend>Terén</legend>
+          <label class="inline"><input type="radio" name="terrain" value="auto" checked /> Automaticky (podle tréninku)</label>
+          <label class="inline"><input type="radio" name="terrain" value="flat" /> Radši rovina</label>
+          <label class="inline"><input type="radio" name="terrain" value="hilly" /> Radši kopce</label>
+        </fieldset>
         <label>
           Průměrná rychlost (km/h)
           <input type="number" step="0.1" min="1" id="speed-input" placeholder="doplní se automaticky" />

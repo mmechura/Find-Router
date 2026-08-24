@@ -24,6 +24,7 @@ interface GenerateBody {
   lon?: number;
   surface?: 'road' | 'gravel';
   speedKmh?: number;
+  terrain?: 'auto' | 'flat' | 'hilly';
 }
 
 function gradeCeilingFor(preferFlat: boolean | undefined): number {
@@ -83,7 +84,7 @@ async function loadWorkoutAndReadiness(workoutDate: string) {
  * field before committing to actually generating a route.
  */
 routeRouter.post('/preview', async (req, res) => {
-  const { date, lat, lon, surface, speedKmh } = req.body as GenerateBody;
+  const { date, lat, lon, surface, speedKmh, terrain } = req.body as GenerateBody;
   if (typeof lat !== 'number' || typeof lon !== 'number') {
     res.status(400).json({ error: 'Chybí výchozí bod (lat, lon).' });
     return;
@@ -99,6 +100,7 @@ routeRouter.post('/preview', async (req, res) => {
     const routeRequest = buildRouteRequest(loaded.workout, { lat, lon }, loaded.readiness, {
       surface: surface === 'gravel' ? 'gravel' : 'road',
       speedOverrideKmh: speedKmh,
+      terrain,
     });
     res.json({ workout: loaded.workout, readiness: loaded.readiness, request: routeRequest });
   } catch (err) {
@@ -107,7 +109,7 @@ routeRouter.post('/preview', async (req, res) => {
 });
 
 routeRouter.post('/generate', async (req, res) => {
-  const { date, lat, lon, surface, speedKmh } = req.body as GenerateBody;
+  const { date, lat, lon, surface, speedKmh, terrain } = req.body as GenerateBody;
 
   if (typeof lat !== 'number' || typeof lon !== 'number') {
     res.status(400).json({ error: 'Chybí výchozí bod (lat, lon).' });
@@ -132,6 +134,7 @@ routeRouter.post('/generate', async (req, res) => {
     const routeRequest = buildRouteRequest(workout, start, readiness, {
       surface: surface === 'gravel' ? 'gravel' : 'road',
       speedOverrideKmh: speedKmh,
+      terrain,
     });
     const mapy = new MapyClient(config.mapyApiKey);
     const elevationClient = new MapyElevationClient(config.mapyApiKey);
