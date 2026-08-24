@@ -5,6 +5,7 @@ import { appPasswordGate } from './authGate.js';
 import { authRouter } from './routes/auth.js';
 import { workoutRouter } from './routes/workout.js';
 import { routeRouter } from './routes/route.js';
+import { geocodeRouter } from './routes/geocode.js';
 
 // process.cwd() rather than an __dirname-relative path: this needs to
 // resolve correctly both for the local/Docker server (cwd = project root)
@@ -21,6 +22,7 @@ app.use(express.static(publicDir));
 app.use('/auth', authRouter);
 app.use('/api/workout', workoutRouter);
 app.use('/api/route', routeRouter);
+app.use('/api/geocode', geocodeRouter);
 
 app.get('/api/config', (_req, res) => {
   res.json({ mapyApiKeyConfigured: Boolean(config.mapyApiKey) });

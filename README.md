@@ -57,13 +57,17 @@ npm run dev
 Appka poběží na `http://localhost:3000`.
 
 1. Klikni na **Připojit Strava** a projdi OAuth souhlas.
-2. Nastav datum tréninku (musí mít v intervals.icu naplánovaný event typu
-   *Workout*) a výchozí bod (ručně nebo tlačítkem *Použít moji polohu*).
-3. Klikni **Vygenerovat trasu** → appka spočítá trasu a nabídne odkaz
+2. V **Kalendáři tréninků** vidíš nejbližší dva týdny z intervals.icu —
+   klikni na trénink a datum se ti vyplní samo (nebo si celý kalendář
+   stáhni jako **.ics** a importuj do Google/Apple/Outlook kalendáře).
+3. Zadej výchozí bod buď **adresou** (napiš a klikni *Najít*, appka ji přes
+   Mapy.com geocoding převede na souřadnice) nebo přímo lat/lon, případně
+   tlačítkem *Použít moji polohu*.
+4. Klikni **Vygenerovat trasu** → appka spočítá trasu a nabídne odkaz
    **Otevřít v Mapy.com a exportovat GPX**.
-4. V Mapy.com trasu zkontroluj/doladíš a exportuješ GPX nativně přes jejich
+5. V Mapy.com trasu zkontroluj/doladíš a exportuješ GPX nativně přes jejich
    plánovač, pak nahraješ do Garmin Edge.
-5. Pokud appka rozpoznala intervaly, přibude sekce **"Okruh na intervaly"**
+6. Pokud appka rozpoznala intervaly, přibude sekce **"Okruh na intervaly"**
    s vlastním odkazem do Mapy.com — tenhle kratší okruh je určený k
    opakování na místě, ne k proběhnutí jednou.
 

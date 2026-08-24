@@ -22,11 +22,26 @@
     </section>
 
     <section class="panel">
-      <h2>2. Trénink a výchozí bod</h2>
+      <h2>2. Kalendář tréninků</h2>
+      <p class="hint">Nejbližší dva týdny z intervals.icu — klikni na trénink, ať se ti vyplní datum níž.</p>
+      <ul id="calendar-list" class="calendar-list"></ul>
+      <a id="calendar-ics-link" class="button" href="/api/workout/calendar.ics">Stáhnout .ics (import do kalendáře)</a>
+    </section>
+
+    <section class="panel">
+      <h2>3. Trénink a výchozí bod</h2>
       <label>
         Datum tréninku
         <input type="date" id="date-input" />
       </label>
+      <label>
+        Start - adresa
+        <div class="row">
+          <input type="text" id="address-input" placeholder="např. Nádražní 5, Třinec" />
+          <button id="address-search-btn" type="button">Najít</button>
+        </div>
+      </label>
+      <ul id="address-results" class="calendar-list" hidden></ul>
       <label>
         Start (lat, lon)
         <div class="row">
@@ -34,6 +49,7 @@
           <input type="number" step="0.000001" id="lon-input" placeholder="14.437800" />
           <button id="locate-btn" type="button">Použít moji polohu</button>
         </div>
+        <p class="hint">Vyplní se automaticky po nalezení adresy, nebo je zadej ručně.</p>
       </label>
       <fieldset id="surface-field">
         <legend>Povrch (jen pro kolo)</legend>

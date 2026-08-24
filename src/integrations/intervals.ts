@@ -11,6 +11,10 @@ interface IntervalsEvent {
   moving_time?: number;
   description?: string;
   icu_training_load?: number;
+  /** ISO date/datetime the event is scheduled for; field name per the
+   *  documented schema at the time of writing - verify if intervals.icu
+   *  changes it. */
+  start_date_local?: string;
 }
 
 /**
@@ -35,11 +39,11 @@ export class IntervalsClient {
     return `Basic ${token}`;
   }
 
-  /** The first WORKOUT-category calendar event planned for `date` (YYYY-MM-DD), if any. */
-  async getPlannedWorkout(date: string): Promise<PlannedWorkout | null> {
+  /** All WORKOUT-category calendar events between `oldest` and `newest` (both YYYY-MM-DD, inclusive). */
+  async listPlannedWorkouts(oldest: string, newest: string): Promise<PlannedWorkout[]> {
     const url = new URL(`${API_BASE}/athlete/${this.athleteId}/events`);
-    url.searchParams.set('oldest', date);
-    url.searchParams.set('newest', date);
+    url.searchParams.set('oldest', oldest);
+    url.searchParams.set('newest', newest);
     url.searchParams.set('category', 'WORKOUT');
 
     const res = await this.fetchImpl(url.toString(), {
@@ -49,18 +53,23 @@ export class IntervalsClient {
       throw new Error(`intervals.icu request failed (${res.status}): ${await res.text()}`);
     }
     const events = (await res.json()) as IntervalsEvent[];
-    if (!Array.isArray(events) || events.length === 0) return null;
+    if (!Array.isArray(events)) return [];
 
-    const event = events[0];
-    return {
+    return events.map((event) => ({
       id: String(event.id),
-      date,
+      date: event.start_date_local?.slice(0, 10) ?? oldest,
       name: event.name ?? 'Plánovaný trénink',
       type: event.type ?? 'Run',
       distanceM: event.distance,
       movingTimeS: event.moving_time,
       description: event.description,
       loadTarget: event.icu_training_load,
-    };
+    }));
+  }
+
+  /** The first WORKOUT-category calendar event planned for `date` (YYYY-MM-DD), if any. */
+  async getPlannedWorkout(date: string): Promise<PlannedWorkout | null> {
+    const workouts = await this.listPlannedWorkouts(date, date);
+    return workouts[0] ?? null;
   }
 }

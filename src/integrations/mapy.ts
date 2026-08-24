@@ -2,7 +2,14 @@ import type { LatLon, MapyProfile, MapyRouteResult } from '../types.js';
 import type { MapyRoutingClient } from '../routing/loopRouteGenerator.js';
 
 const ROUTING_ENDPOINT = 'https://api.mapy.com/v1/routing/route';
+const GEOCODE_ENDPOINT = 'https://api.mapy.com/v1/geocode';
 const PLANNER_ENDPOINT = 'https://mapy.com/fnc/v1/route';
+
+export interface GeocodeResult {
+  label: string;
+  lat: number;
+  lon: number;
+}
 
 function formatPoint(p: LatLon): string {
   // Mapy.com REST API expects "lon,lat" (GeoJSON/WGS84 axis order).
@@ -57,6 +64,37 @@ export class MapyClient implements MapyRoutingClient {
       durationS: data.duration,
       geometry: data.geometry,
     };
+  }
+
+  /**
+   * Address/place -> coordinates via the Mapy.com Forward Geocoding API
+   * (https://developer.mapy.com/rest-api-mapy-cz/function/geocoding/).
+   * Biased towards Czechia by default since that's where this app's
+   * exclusion-zone/spur-avoidance logic is tuned for.
+   */
+  async geocode(query: string, limit = 5): Promise<GeocodeResult[]> {
+    const url = new URL(GEOCODE_ENDPOINT);
+    url.searchParams.set('apikey', this.apiKey);
+    url.searchParams.set('query', query);
+    url.searchParams.set('lang', 'cs');
+    url.searchParams.set('limit', String(limit));
+    url.searchParams.append('type', 'regional');
+    url.searchParams.append('type', 'poi');
+
+    const res = await this.fetchImpl(url.toString());
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      throw new Error(`Mapy.com geocode request failed (${res.status}): ${body}`);
+    }
+    const data = (await res.json()) as {
+      items?: { name: string; label: string; position: { lon: number; lat: number } }[];
+    };
+
+    return (data.items ?? []).map((item) => ({
+      label: item.label || item.name,
+      lat: item.position.lat,
+      lon: item.position.lon,
+    }));
   }
 }
 

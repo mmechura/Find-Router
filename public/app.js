@@ -14,6 +14,11 @@ const plannerLink = document.getElementById('planner-link');
 const repeatPanel = document.getElementById('repeat-panel');
 const repeatDetails = document.getElementById('repeat-details');
 const repeatPlannerLink = document.getElementById('repeat-planner-link');
+const calendarList = document.getElementById('calendar-list');
+const calendarIcsLink = document.getElementById('calendar-ics-link');
+const addressInput = document.getElementById('address-input');
+const addressSearchBtn = document.getElementById('address-search-btn');
+const addressResults = document.getElementById('address-results');
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 
@@ -74,6 +79,77 @@ async function refreshStravaStatus() {
     stravaStatus.textContent = 'Nepodařilo se zjistit stav připojení Strava.';
   }
 }
+
+async function loadCalendar() {
+  try {
+    const res = await fetch('/api/workout/calendar');
+    const data = await res.json();
+    if (!res.ok) {
+      calendarList.innerHTML = `<li class="muted">${data.error || 'Kalendář se nepodařilo načíst.'}</li>`;
+      return;
+    }
+    calendarIcsLink.href = `/api/workout/calendar.ics?from=${data.from}&to=${data.to}`;
+    if (data.workouts.length === 0) {
+      calendarList.innerHTML = '<li class="muted">Žádné naplánované tréninky v nejbližších dvou týdnech.</li>';
+      return;
+    }
+    calendarList.innerHTML = '';
+    for (const workout of data.workouts) {
+      const li = document.createElement('li');
+      const distance = workout.distanceM ? `${(workout.distanceM / 1000).toFixed(1)} km` : '';
+      const duration = workout.movingTimeS ? `${Math.round(workout.movingTimeS / 60)} min` : '';
+      li.textContent = `${workout.date} - ${workout.name}${distance || duration ? ` (${[distance, duration].filter(Boolean).join(', ')})` : ''}`;
+      li.addEventListener('click', () => {
+        dateInput.value = workout.date;
+        setStatus(`Datum nastaveno na ${workout.date}.`);
+      });
+      calendarList.append(li);
+    }
+  } catch {
+    calendarList.innerHTML = '<li class="muted">Kalendář se nepodařilo načíst.</li>';
+  }
+}
+
+async function searchAddress() {
+  const query = addressInput.value.trim();
+  if (!query) return;
+  addressResults.hidden = false;
+  addressResults.innerHTML = '<li class="muted">Hledám…</li>';
+  try {
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      addressResults.innerHTML = `<li class="muted">${data.error || 'Hledání selhalo.'}</li>`;
+      return;
+    }
+    if (data.results.length === 0) {
+      addressResults.innerHTML = '<li class="muted">Nic nenalezeno.</li>';
+      return;
+    }
+    addressResults.innerHTML = '';
+    for (const result of data.results) {
+      const li = document.createElement('li');
+      li.textContent = result.label;
+      li.addEventListener('click', () => {
+        latInput.value = result.lat.toFixed(6);
+        lonInput.value = result.lon.toFixed(6);
+        addressResults.hidden = true;
+        setStatus(`Start nastaven na "${result.label}".`);
+      });
+      addressResults.append(li);
+    }
+  } catch (err) {
+    addressResults.innerHTML = `<li class="muted">Chyba: ${err.message}</li>`;
+  }
+}
+
+addressSearchBtn.addEventListener('click', searchAddress);
+addressInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    searchAddress();
+  }
+});
 
 locateBtn.addEventListener('click', () => {
   if (!navigator.geolocation) {
@@ -169,3 +245,4 @@ generateBtn.addEventListener('click', async () => {
 });
 
 refreshStravaStatus();
+loadCalendar();
