@@ -160,6 +160,22 @@ async function searchAddress() {
   }
 }
 
+async function prefillDefaultAddress() {
+  const query = addressInput.value.trim();
+  if (!query || latInput.value || lonInput.value) return;
+  try {
+    const res = await fetch(`/api/geocode?q=${encodeURIComponent(query)}`);
+    const data = await res.json();
+    if (res.ok && data.results.length > 0) {
+      latInput.value = data.results[0].lat.toFixed(6);
+      lonInput.value = data.results[0].lon.toFixed(6);
+      schedulePreview();
+    }
+  } catch {
+    // Tichý no-op — výchozí adresu si uživatel může doplnit/opravit ručně.
+  }
+}
+
 addressSearchBtn.addEventListener('click', searchAddress);
 addressInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') {
@@ -424,3 +440,4 @@ async function openArchiveEntry(id) {
 
 refreshStravaStatus();
 loadCalendar();
+prefillDefaultAddress();
