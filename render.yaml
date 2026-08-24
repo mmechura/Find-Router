@@ -22,3 +22,24 @@ services:
         sync: false
       - key: BASE_URL
         sync: false
+      # Variant 2, Milestone 1 (see docs/ARCHITECTURE.md and
+      # brouter/README.md) - optional. Leave both unset (or ROUTE_ENGINE
+      # unset/"mapy") unless you've deployed the find-router-brouter service
+      # below and want to actually exercise it; only bike-road requests use
+      # it even when set.
+      - key: ROUTE_ENGINE
+        sync: false
+      - key: BROUTER_URL
+        sync: false
+
+  # Variant 2, Milestone 1's self-hosted BRouter instance (see
+  # brouter/README.md) - a separate service since it needs its own
+  # persistent-ish process and baked-in segment data, unlike the stateless
+  # app above. Optional: only deploy this if you're validating the BRouter
+  # path. Set the Root Directory to "brouter" when creating this service in
+  # the Render dashboard so it builds brouter/Dockerfile.
+  - type: web
+    name: find-router-brouter
+    runtime: docker
+    plan: free
+    rootDir: brouter

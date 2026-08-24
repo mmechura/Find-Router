@@ -1,4 +1,5 @@
 import { boundsAround, distancePointToSegmentKm, haversineDistanceKm, type BoundingBox } from './geo.js';
+import type { NogoCircle } from '../integrations/brouter.js';
 import { fetchRestrictedWays, type RestrictedWay } from '../integrations/overpass.js';
 import type { LatLon, Sport } from '../types.js';
 
@@ -64,6 +65,22 @@ const STATIC_ZONE_BOUNDS: { name: string; bounds: BoundingBox }[] = [
 ];
 
 export const EXCLUDED_ZONES: ExcludedZone[] = STATIC_ZONE_BOUNDS.map((z) => boxZone(z.name, z.bounds));
+
+/**
+ * Approximates each static exclusion zone as a circle covering its bounding
+ * box, for engines (BRouter - see brouterLoopGenerator.ts) that take no-go
+ * areas as an explicit search-time request parameter instead of checking a
+ * finished route after the fact. Milestone 1 only converts the static list -
+ * the live Overpass-derived zones (below) stay reject-and-retry for now,
+ * see docs/ARCHITECTURE.md for why.
+ */
+export function staticNogoCircles(): NogoCircle[] {
+  return STATIC_ZONE_BOUNDS.map(({ name, bounds }) => {
+    const center: LatLon = { lat: (bounds.minLat + bounds.maxLat) / 2, lon: (bounds.minLon + bounds.maxLon) / 2 };
+    const corner: LatLon = { lat: bounds.maxLat, lon: bounds.maxLon };
+    return { name, center, radiusKm: haversineDistanceKm(center, corner) };
+  });
+}
 
 function nameForWay(way: RestrictedWay): string {
   const reason =

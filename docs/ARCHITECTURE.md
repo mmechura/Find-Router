@@ -249,9 +249,63 @@ práce — stažení a údržba grafu, algoritmus hledání okruhu s omezeními)
 Místo toho kombinuje "namíř náhodně, přichyť na silnici, ověř sklon,
 zkus znovu, když to nevyjde" — funguje to podstatně líp než čistě náhodné
 body, ale pořád to je heuristika s omezeným počtem pokusů (`maxIterations`,
-výchozí 8), ne garance. Pokud appka ani po variantě 1 nedává dost kvalitní
-trasy v konkrétním terénu, skutečný graf-based přístup je logický další
-krok, ale je to samostatný, mnohem větší projekt.
+výchozí 8), ne garance. Ukázalo se to i naostro: "Radši rovina" na 25km
+trase v Beskydech (Jablunkov) i po vyčerpání všech 8 pokusů vygenerovalo
+trasu s 394 m převýšení — namátkové hádání bodů nemá jak *hledat* rovinatější
+terén, jen přijmout/odmítnout to, na co náhodou narazí. Řešení téhle
+konkrétní meze je varianta 2 níž.
+
+## Varianta 2, Milestone 1: BRouter jako alternativní routovací engine
+
+Namísto stavby vlastního grafu silniční sítě a hledacího algoritmu od nuly
+(viz odstavec výš — proto se to dřív odkládalo jako "samostatný, mnohem
+větší projekt") appka od Milestone 1 umí použít existující, k tomuhle
+přesně určený engine: [BRouter](https://github.com/abrensch/brouter),
+self-hosted, open-source. Na rozdíl od Mapy.com Routing API:
+
+- **umí sám hledat okruh dané délky** (`roundTripDistance`) ze zadaného
+  bodu — appka mu nemusí navrhovat tvary a iterovat,
+- **sklon je součástí hledání, ne dodatečná kontrola** — profil (`.brf`
+  soubor) má `uphillcost`/`downhillcost`, takže "vyhni se kopcům" je
+  vlastnost samotného hledání trasy, ne filtr až po faktu,
+- **zakázané oblasti (`nogos`) taky řeší při hledání** — engine tudy
+  prostě nikdy nenavrhne trasu, místo aby appka musela vygenerovanou
+  trasu zahodit a zkusit znovu,
+- **segmentová data (graf silniční sítě) publikuje BRouter sám**,
+  předpočítaná a pravidelně aktualizovaná — appka si jen stáhne dlaždici
+  pro danou oblast, nestaví si vlastní pipeline z OSM dat.
+
+**Rozsah Milestone 1** (schválený plán, ne celá varianta 2 najednou):
+jen dotazy **kolo + silnice**, jen oblast Beskyd/Jablunkovska (jedna
+segmentová dlaždice `E15_N45.rd5`), běží **souběžně** s Mapy.com
+generátorem (ne místo něj) za vývojářským přepínačem `ROUTE_ENGINE=brouter`
++ `BROUTER_URL` (`useBRouterFor()` v `src/routes/route.ts`) — pro cokoli
+jiného (běh, gravel, jiná oblast) appka pořád použije Mapy.com generátor
+beze změny. Ostatní sport/povrch/terén kombinace, plnohodnotný Overpass-based
+seznam `nogos`, a případné zrušení Mapy Elevation API kontroly zůstávají
+záměrně mimo tenhle milestone.
+
+Praktické důsledky pro tenhle engine (`src/integrations/brouter.ts`,
+`src/routing/brouterLoopGenerator.ts`, `brouter/`):
+
+- **`spurs.ts`/`excludedZones.ts` se pro BRouter cestu vůbec nevolají** —
+  skutečné hledání v grafu by nemělo produkovat slepé výběžky, a `nogos`
+  řeší zakázané oblasti při hledání, ne po faktu.
+- **`checkRouteElevation()` (Mapy Elevation API) běží dál, ale jen jako
+  pozorovací kontrola** — pokud nesouhlasí s tím, co už BRouter sám
+  vyřešil, appka to jen zaloguje (`generateLoopRouteViaBRouter()`), trasu
+  nikdy nezahazuje ani nezkouší znovu. Cíl je nasbírat data o tom, jak moc
+  si BRouter věřit, než se tahle druhá kontrola případně úplně zruší.
+- **Hosting**: appka zůstává na Vercelu beze změny (Strava OAuth, KV
+  archiv...) — BRouter potřebuje trvalý proces s daty na disku, což
+  serverless funkce neumí, takže běží jako samostatná služba (viz
+  [`brouter/README.md`](../brouter/README.md)), volaná přes `BROUTER_URL`.
+  Zvolený hosting je Renderova free tier varianta (0 Kč/měsíc) — vědomě
+  přijaté riziko: služba po nečinnosti usne a první request po probuzení
+  může trvat desítky sekund, přes 10s limit na Vercel Hobby funkci. Pro
+  Milestone 1 (vývojářský přepínač, ne uživatelská volba) je to přijatelné;
+  než by tahle cesta byla uživatelsky viditelná, potřebuje to buď placenou
+  always-on varianty, nebo fallback na Mapy.com generátor při timeoutu.
 
 ## Moje trasy (Strava) — ne oficiální heatmapa
 

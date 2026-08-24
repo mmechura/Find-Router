@@ -1,0 +1,18 @@
+# Local dev convenience for Variant 2, Milestone 1 (see docs/ARCHITECTURE.md
+# and brouter/README.md) - brings up a local BRouter instance so you can set
+# BROUTER_URL=http://localhost:17777 and ROUTE_ENGINE=brouter in your local
+# .env, without needing the hosted Render service. This only builds/runs
+# BRouter - run the Node app itself the normal way (`npm run dev`), not
+# through this file.
+services:
+  brouter:
+    build:
+      context: ./brouter
+    ports:
+      - '17777:17777'
+    volumes:
+      # Bind-mounted over the image's baked-in copies so you can swap a
+      # segment tile or tweak a .brf profile without rebuilding the image -
+      # see brouter/README.md for where to download tiles from.
+      - ./brouter/segments:/segments4
+      - ./brouter/profiles:/customprofiles

@@ -12,6 +12,13 @@ export const config = {
 
   mapyApiKey: optional('MAPY_API_KEY'),
 
+  // Variant 2, Milestone 1 (see docs/ARCHITECTURE.md): a self-hosted BRouter
+  // instance used as an alternate routing engine for bike+road requests only.
+  // Unset (or 'mapy') keeps the shipped Mapy.com-based generator for
+  // everything - this is a developer-facing flag, not a user-facing choice.
+  routeEngine: (optional('ROUTE_ENGINE') ?? 'mapy') as 'mapy' | 'brouter',
+  brouterUrl: optional('BROUTER_URL'),
+
   stravaClientId: optional('STRAVA_CLIENT_ID'),
   stravaClientSecret: optional('STRAVA_CLIENT_SECRET'),
   stravaRedirectUri: optional('STRAVA_REDIRECT_URI') ?? 'http://localhost:3000/auth/strava/callback',

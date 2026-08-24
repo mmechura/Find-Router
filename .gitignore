@@ -4,3 +4,7 @@ dist/
 *.log
 .DS_Store
 data/
+
+# Downloaded BRouter segment tiles (see brouter/README.md) - large binaries,
+# not something to commit; each dev/deploy downloads what it needs.
+brouter/segments/*.rd5

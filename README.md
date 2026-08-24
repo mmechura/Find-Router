@@ -173,6 +173,26 @@ nasadit na Fly.io, Railway, vlastní VPS apod. — na hostingu s trvalým
 diskem je `STRAVA_REFRESH_TOKEN` jen volitelná pojistka, appka si tokeny
 umí ukládat sama do `data/strava-tokens.json`.
 
+### Volitelné: BRouter routovací engine (Variant 2, Milestone 1)
+
+Appka umí místo Mapy.com pro dotazy **kolo + silnice** použít self-hosted
+[BRouter](https://github.com/abrensch/brouter) — engine, který na rozdíl od
+Mapy.com umí sám hledat okruh dané délky s ohledem na převýšení (tohle
+řeší reálné omezení popsané v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md):
+"Radší rovina" u Mapy.com generátoru v opravdu kopcovitém terénu nešlo
+zaručit, jen omezit počtem pokusů). Je to zatím vývojářský přepínač, ne
+volba v appce - nastavíš ho přes dvě proměnné prostředí:
+
+```
+ROUTE_ENGINE=brouter
+BROUTER_URL=<adresa běžící BRouter instance>
+```
+
+Detailní návod (lokální vývoj přes `docker compose up brouter`, nasazení
+jako samostatná Render free-tier služba, stažení dat pro danou oblast) je
+v [`brouter/README.md`](brouter/README.md). Bez nastavení `ROUTE_ENGINE`
+(nebo s `ROUTE_ENGINE=mapy`, výchozí) appka běží přesně jako dřív.
+
 ## Vývoj
 
 ```bash

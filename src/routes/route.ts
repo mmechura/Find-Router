@@ -8,7 +8,9 @@ import { getValidStravaAccessToken } from '../stravaSession.js';
 import { computeReadiness } from '../routing/readiness.js';
 import { buildRouteRequest, estimateDurationS, mapIntervalsTypeToSport } from '../routing/planMatcher.js';
 import { generateLoopRoute } from '../routing/loopRouteGenerator.js';
-import { buildExclusionChecker } from '../routing/excludedZones.js';
+import { generateLoopRouteViaBRouter } from '../routing/brouterLoopGenerator.js';
+import { BRouterClient } from '../integrations/brouter.js';
+import { buildExclusionChecker, staticNogoCircles } from '../routing/excludedZones.js';
 import { buildRoadSnapper } from '../routing/roadSnapper.js';
 import { getRouteStore } from '../routing/routeStore.js';
 import { MapyElevationClient } from '../integrations/elevation.js';
@@ -44,6 +46,22 @@ function gradeCeilingFor(preferFlat: boolean | undefined): number {
  */
 function gainCeilingFor(preferFlat: boolean | undefined): number | undefined {
   return preferFlat ? STRICT_MAX_GAIN_PER_KM : undefined;
+}
+
+/**
+ * Variant 2, Milestone 1 (see docs/ARCHITECTURE.md): a self-hosted BRouter
+ * instance as an alternate routing engine, gated behind ROUTE_ENGINE and
+ * only covering the one sport/surface combination Milestone 1 validated
+ * (bike, road) - anything else still goes through the shipped Mapy.com-based
+ * generator regardless of the flag. This is a developer-facing switch, not
+ * a user-facing choice.
+ */
+function useBRouterFor(routeRequest: RoutePlan): boolean {
+  return config.routeEngine === 'brouter' && !!config.brouterUrl && routeRequest.sport === 'bike' && routeRequest.surface === 'road';
+}
+
+function brouterProfileFor(preferFlat: boolean | undefined): string {
+  return preferFlat ? 'bike-road-flat' : 'bike-road-hilly';
 }
 
 /**
@@ -155,66 +173,117 @@ routeRouter.post('/generate', async (req, res) => {
     const elevationClient = new MapyElevationClient(config.mapyApiKey);
     const radiusKm = routeRequest.targetDistanceKm / (2 * Math.PI);
 
-    // Two live OSM lookups covering the whole area this request could
-    // plausibly touch, each fetched once and reused for both the main
-    // route and the smaller interval-repeat loop below: no-go areas
-    // (private/no-access ways, gates, motorways for bikes) and the real
-    // road/path network to snap candidate waypoints onto. Both degrade
-    // gracefully (fall back to static-only / unsnapped) rather than
-    // failing the request if Overpass is slow or unreachable - see
-    // excludedZones.ts and roadSnapper.ts.
-    const [exclusionChecker, roadSnapper] = await Promise.all([
-      buildExclusionChecker(start, radiusKm, routeRequest.sport),
-      buildRoadSnapper(start, radiusKm, routeRequest.sport),
-    ]);
-
-    const route = await generateLoopRoute(
-      {
-        ...routeRequest,
-        exclusionChecker,
-        roadSnapper: roadSnapper ?? undefined,
-        elevationGate: {
-          client: elevationClient,
-          maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
-          maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
-          strictWindows: warmupCooldownWindows(routeRequest),
-        },
-      },
-      mapy,
-    );
-    route.durationS = estimateDurationS(route.actualDistanceKm, routeRequest.paceKmh);
-    const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);
-
-    // For an interval workout, also propose a short loop sized to one
-    // work+recovery cycle - a practical place to physically repeat the hard
-    // reps, since a single long GPX track can't carry per-rep pace cues
-    // anyway (see README). Same terrain preference as the main route: an
-    // interval session isn't forced flat, so neither is this. It's one
-    // consistent-effort loop, so a single grade ceiling (no windows) is
-    // enough - unlike the main route it has no separate easy bookends.
+    let route: Awaited<ReturnType<typeof generateLoopRoute>>;
     let repeatRoute: Awaited<ReturnType<typeof generateLoopRoute>> | undefined;
-    let repeatPlannerUrl: string | undefined;
-    if (routeRequest.repeatSegmentKm && routeRequest.repeatSegmentKm >= 0.15) {
-      repeatRoute = await generateLoopRoute(
+
+    if (useBRouterFor(routeRequest)) {
+      // Variant 2, Milestone 1: BRouter's own round-trip search already
+      // enforces distance/elevation/no-go constraints at search time (via
+      // the chosen .brf profile and `nogos`), so none of the live Overpass
+      // lookups, road-snapping, or reject-and-retry checks the Mapy path
+      // needs below are used here - see brouterLoopGenerator.ts and
+      // docs/ARCHITECTURE.md.
+      const brouter = new BRouterClient(config.brouterUrl!);
+      const nogos = staticNogoCircles();
+      const brouterProfile = brouterProfileFor(routeRequest.preferFlat);
+
+      route = await generateLoopRouteViaBRouter(
         {
           start,
-          targetDistanceKm: routeRequest.repeatSegmentKm,
-          sport: routeRequest.sport,
-          preferFlat: routeRequest.preferFlat,
-          surface: routeRequest.surface,
+          targetDistanceKm: routeRequest.targetDistanceKm,
+          brouterProfile,
+          mapyProfile: 'bike_road',
+          nogos,
+          elevationObservability: {
+            client: elevationClient,
+            maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+            maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+          },
+        },
+        brouter,
+      );
+      route.durationS = estimateDurationS(route.actualDistanceKm, routeRequest.paceKmh);
+
+      if (routeRequest.repeatSegmentKm && routeRequest.repeatSegmentKm >= 0.15) {
+        repeatRoute = await generateLoopRouteViaBRouter(
+          {
+            start,
+            targetDistanceKm: routeRequest.repeatSegmentKm,
+            brouterProfile,
+            mapyProfile: 'bike_road',
+            nogos,
+            elevationObservability: {
+              client: elevationClient,
+              maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+              maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+            },
+          },
+          brouter,
+        );
+        repeatRoute.durationS = estimateDurationS(repeatRoute.actualDistanceKm, routeRequest.paceKmh);
+      }
+    } else {
+      // Two live OSM lookups covering the whole area this request could
+      // plausibly touch, each fetched once and reused for both the main
+      // route and the smaller interval-repeat loop below: no-go areas
+      // (private/no-access ways, gates, motorways for bikes) and the real
+      // road/path network to snap candidate waypoints onto. Both degrade
+      // gracefully (fall back to static-only / unsnapped) rather than
+      // failing the request if Overpass is slow or unreachable - see
+      // excludedZones.ts and roadSnapper.ts.
+      const [exclusionChecker, roadSnapper] = await Promise.all([
+        buildExclusionChecker(start, radiusKm, routeRequest.sport),
+        buildRoadSnapper(start, radiusKm, routeRequest.sport),
+      ]);
+
+      route = await generateLoopRoute(
+        {
+          ...routeRequest,
           exclusionChecker,
           roadSnapper: roadSnapper ?? undefined,
           elevationGate: {
             client: elevationClient,
             maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
             maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+            strictWindows: warmupCooldownWindows(routeRequest),
           },
         },
         mapy,
       );
-      repeatRoute.durationS = estimateDurationS(repeatRoute.actualDistanceKm, routeRequest.paceKmh);
-      repeatPlannerUrl = buildMapyPlannerUrl(repeatRoute.waypoints, repeatRoute.profile);
+      route.durationS = estimateDurationS(route.actualDistanceKm, routeRequest.paceKmh);
+
+      // For an interval workout, also propose a short loop sized to one
+      // work+recovery cycle - a practical place to physically repeat the
+      // hard reps, since a single long GPX track can't carry per-rep pace
+      // cues anyway (see README). Same terrain preference as the main
+      // route: an interval session isn't forced flat, so neither is this.
+      // It's one consistent-effort loop, so a single grade ceiling (no
+      // windows) is enough - unlike the main route it has no separate easy
+      // bookends.
+      if (routeRequest.repeatSegmentKm && routeRequest.repeatSegmentKm >= 0.15) {
+        repeatRoute = await generateLoopRoute(
+          {
+            start,
+            targetDistanceKm: routeRequest.repeatSegmentKm,
+            sport: routeRequest.sport,
+            preferFlat: routeRequest.preferFlat,
+            surface: routeRequest.surface,
+            exclusionChecker,
+            roadSnapper: roadSnapper ?? undefined,
+            elevationGate: {
+              client: elevationClient,
+              maxGradePercent: gradeCeilingFor(routeRequest.preferFlat),
+              maxGainPerKm: gainCeilingFor(routeRequest.preferFlat),
+            },
+          },
+          mapy,
+        );
+        repeatRoute.durationS = estimateDurationS(repeatRoute.actualDistanceKm, routeRequest.paceKmh);
+      }
     }
+
+    const plannerUrl = buildMapyPlannerUrl(route.waypoints, route.profile);
+    const repeatPlannerUrl = repeatRoute ? buildMapyPlannerUrl(repeatRoute.waypoints, repeatRoute.profile) : undefined;
 
     const storedRoute = {
       id: randomUUID(),
