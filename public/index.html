@@ -74,6 +74,18 @@
         <p id="status-message"></p>
       </section>
 
+      <section class="panel" id="heatmap-panel">
+        <h2>Moje trasy (Strava)</h2>
+        <p class="hint">
+          Není to oficiální Strava heatmapa (tu appce API nedovolí stáhnout) —
+          appka místo toho vezme trasy tvých posledních aktivit ze Strava a
+          vykreslí je na mapu, ať vidíš, kudy už jsi jezdil/běhal.
+        </p>
+        <button id="heatmap-load-btn" type="button">Načíst moje trasy</button>
+        <div id="heatmap-map" hidden></div>
+        <p id="heatmap-status" class="hint"></p>
+      </section>
+
       <section class="panel" id="workout-panel" hidden>
         <h2>Plánovaný trénink</h2>
         <dl id="workout-details"></dl>
@@ -95,7 +107,9 @@
         <p class="hint">
           V Mapy.com trasu podle potřeby doupravíš a použiješ jejich vlastní export
           do GPX, který pak nahraješ do Garmin Edge (přes Garmin Connect / Express,
-          nebo přímo přes SD kartu). Trasa se zároveň uložila do Archivu.
+          nebo přímo přes SD kartu). Trasa se zároveň uložila do
+          <a href="#" id="route-archive-link">Archivu</a> — najdeš ji tam i příště,
+          aniž bys musel/a generovat znovu.
         </p>
       </section>
 

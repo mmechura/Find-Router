@@ -16,6 +16,7 @@ export interface StravaActivitySummary {
   distance: number; // meters
   moving_time: number; // seconds
   suffer_score?: number;
+  map?: { summary_polyline?: string };
 }
 
 export function buildStravaAuthorizeUrl(

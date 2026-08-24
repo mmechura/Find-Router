@@ -28,7 +28,14 @@ sklon terénu) a appka body okruhu staví chytřeji, ne jen náhodně:
   tréninku záměrně kopcovitý,
 - **průměrná rychlost** je editovatelné pole (předvyplněné ze Strava
   historie nebo výchozí hodnotou appky) — mění cílovou vzdálenost i
-  rozdělení rozcvička/vyklusání okamžitě, jak ji měníš.
+  rozdělení rozcvička/vyklusání okamžitě, jak ji měníš,
+- **terén** (rovina/kopce) si můžeš vybrat i ručně — appka jinak sama
+  volí rovinu jen u opravdu volných/regeneračních tréninků.
+
+Appka umí i vykreslit tvoje poslední trasy ze Strava na mapu (panel
+"Moje trasy (Strava)") — není to oficiální Strava heatmapa (tu appka přes
+běžný API klíč nemá jak stáhnout), jen přehled, kudy už jsi jezdil/běhal,
+postavený ze stejných dat, co appka používá pro odhad tempa a únavy.
 
 Podrobnosti, limity a proč to (zatím) není plnohodnotný graf-based
 route-planner jsou v [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -86,12 +93,13 @@ připojení Strava).
 7. Pokud appka rozpoznala intervaly, přibude sekce **"Okruh na intervaly"**
    s vlastním odkazem do Mapy.com — tenhle kratší okruh je určený k
    opakování na místě, ne k proběhnutí jednou.
-8. Každá vygenerovaná trasa se automaticky uloží do **Archivu tras** — otevři
-   ho z hamburger menu, klikni na trénink a appka znovu zobrazí uloženou
-   trasu (mapu i odkaz do Mapy.com) bez nového generování. Bez nastaveného
-   Vercel KV (viz Nasazení níže) se archiv na serverless hostingu po
-   restartu appky vyprázdní; lokálně/na hostingu s trvalým diskem přežije
-   v `data/routes.json`.
+8. Každá vygenerovaná trasa se automaticky uloží do **Archivu tras** — hned
+   po vygenerování na to appka i přímo upozorní odkazem "Otevřít v Archivu"
+   pod trasou, nebo si Archiv kdykoli otevři z hamburger menu, klikni na
+   trénink a appka znovu zobrazí uloženou trasu (mapu i odkaz do Mapy.com)
+   bez nového generování. Bez nastaveného Vercel KV (viz Nasazení níže) se
+   archiv na serverless hostingu po restartu appky vyprázdní; lokálně/na
+   hostingu s trvalým diskem přežije v `data/routes.json`.
 
 ## Nasazení (aby appka fungovala odkudkoli, ne jen na `localhost`)
 

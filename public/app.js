@@ -34,6 +34,10 @@ const archivePlannerLink = document.getElementById('archive-planner-link');
 const archiveRepeatBlock = document.getElementById('archive-repeat-block');
 const archiveRepeatDetails = document.getElementById('archive-repeat-details');
 const archiveRepeatPlannerLink = document.getElementById('archive-repeat-planner-link');
+const routeArchiveLink = document.getElementById('route-archive-link');
+const heatmapLoadBtn = document.getElementById('heatmap-load-btn');
+const heatmapMapDiv = document.getElementById('heatmap-map');
+const heatmapStatus = document.getElementById('heatmap-status');
 
 dateInput.value = new Date().toISOString().slice(0, 10);
 
@@ -306,6 +310,8 @@ function renderRepeatRoute(route, plannerUrl) {
   repeatPlannerLink.href = plannerUrl;
 }
 
+let lastArchivedId = null;
+
 generateBtn.addEventListener('click', async () => {
   const lat = parseFloat(latInput.value);
   const lon = parseFloat(lonInput.value);
@@ -333,6 +339,7 @@ generateBtn.addEventListener('click', async () => {
     renderWorkout(data.workout);
     renderRoute(data.route, data.plannerUrl);
     renderRepeatRoute(data.repeatRoute, data.repeatPlannerUrl);
+    lastArchivedId = data.archivedId ?? null;
     setStatus('Hotovo.');
   } catch (err) {
     setStatus(`Chyba: ${err.message}`, true);
@@ -368,6 +375,56 @@ document.querySelectorAll('.nav-link').forEach((link) => {
     showView(link.dataset.view);
     closeNav();
   });
+});
+
+routeArchiveLink.addEventListener('click', (e) => {
+  e.preventDefault();
+  if (!lastArchivedId) return;
+  showView('archive');
+  openArchiveEntry(lastArchivedId);
+});
+
+// ---------- Moje trasy (Strava heatmapa) ----------
+
+heatmapLoadBtn.addEventListener('click', async () => {
+  heatmapStatus.textContent = 'Načítám…';
+  heatmapLoadBtn.disabled = true;
+  try {
+    const res = await fetch('/api/strava/heatmap');
+    const data = await res.json();
+    if (!res.ok) {
+      heatmapMapDiv.hidden = true;
+      heatmapStatus.textContent = data.error || 'Trasy se nepodařilo načíst.';
+      return;
+    }
+    if (data.tracks.length === 0) {
+      heatmapMapDiv.hidden = true;
+      heatmapStatus.textContent = 'Zatím žádné aktivity s trasou za posledních 180 dní.';
+      return;
+    }
+
+    heatmapMapDiv.hidden = false;
+    const map = ensureMap('heatmap-map');
+    const entry = maps['heatmap-map'];
+    if (entry.layer) map.removeLayer(entry.layer);
+    const group = L.featureGroup(
+      data.tracks.map((track) =>
+        L.polyline(
+          track.map(({ lat, lon }) => [lat, lon]),
+          { color: '#3b6fd6', weight: 2, opacity: 0.55 },
+        ),
+      ),
+    ).addTo(map);
+    entry.layer = group;
+    map.invalidateSize();
+    map.fitBounds(group.getBounds(), { padding: [20, 20] });
+    heatmapStatus.textContent = `Zobrazeno ${data.tracks.length} z ${data.activityCount} aktivit za posledních 180 dní.`;
+  } catch (err) {
+    heatmapMapDiv.hidden = true;
+    heatmapStatus.textContent = `Chyba: ${err.message}`;
+  } finally {
+    heatmapLoadBtn.disabled = false;
+  }
 });
 
 // ---------- Archiv tras ----------

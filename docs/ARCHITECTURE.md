@@ -40,6 +40,8 @@
 
 - `src/routing/geo.ts` — sférická geometrie (haversine, destinationPoint) a
   seedovaný PRNG pro reprodukovatelné trasy.
+- `src/routing/polyline.ts` — dekodér Google/Strava "encoded polyline"
+  formátu (`summary_polyline`), použitý jen pro `src/routes/heatmap.ts`.
 - `src/routing/loopRouteGenerator.ts` — jádro aplikace: z výchozího bodu a
   cílové vzdálenosti navrhne tvarové body okruhu, nechá je Mapy.com
   Routing API "přichytit" na skutečné cesty a iterativně upravuje poloměr,
@@ -229,6 +231,28 @@ body, ale pořád to je heuristika s omezeným počtem pokusů (`maxIterations`,
 výchozí 8), ne garance. Pokud appka ani po variantě 1 nedává dost kvalitní
 trasy v konkrétním terénu, skutečný graf-based přístup je logický další
 krok, ale je to samostatný, mnohem větší projekt.
+
+## Moje trasy (Strava) — ne oficiální heatmapa
+
+Stravina vlastní heatmapa (dlaždice na strava.com/heatmap) není přes
+veřejné vývojářské API dostupná — je to buď funkce jen v jejich vlastní
+appce/webu, nebo placený enterprise "Global Heatmap" licenční produkt, ne
+něco, k čemu by se dal dostat běžný osobní API klíč. Appka místo toho
+staví vlastní přiblížení ze stejných dat, která už jednou stahuje pro
+`readiness.ts`:
+
+- `GET /api/strava/heatmap` (`src/routes/heatmap.ts`) zavolá
+  `StravaClient.listRecentActivities()` (výchozí okno 180 dní, max. 100
+  aktivit na stránku — Strava API nestránkuje víc na jedno volání) a z
+  pole `map.summary_polyline` každé aktivity dekóduje souřadnice přes
+  `decodePolyline()` (`src/routing/polyline.ts` — standardní Google/Strava
+  "encoded polyline" formát).
+- Tlačítko **"Načíst moje trasy"** v panelu "Moje trasy (Strava)" na
+  frontendu si o ně řekne a vykreslí je jako tenké poloprůhledné čáry na
+  vlastní mapě (`#heatmap-map`) — ne oficiální heatmapa s hustotou, jen
+  překryv tras, které appka zná. Bez připojené Strava appka vrátí jasnou
+  chybu místo pádu (`400` s textem, ať se uživatel jde připojit v
+  Nastavení).
 
 ## Další vědomá omezení
 

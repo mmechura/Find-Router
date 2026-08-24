@@ -321,7 +321,8 @@ button.primary,
 #map,
 #repeat-map,
 #archive-map,
-#archive-repeat-map {
+#archive-repeat-map,
+#heatmap-map {
   height: 320px;
   border-radius: 10px;
   margin: 0.75rem 0;
@@ -335,6 +336,10 @@ button.primary,
   font-size: 0.82rem;
   color: var(--text-muted);
   margin-top: 0.3rem;
+}
+
+.hint a {
+  color: var(--accent-c);
 }
 
 #status-message {
